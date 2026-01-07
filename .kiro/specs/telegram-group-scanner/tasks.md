@@ -32,22 +32,22 @@ This implementation plan breaks down the Telegram Group Scanner into discrete co
     - Test session file creation and loading
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
 
-- [ ] 3. Implement group discovery and access management
-  - [ ] 3.1 Create Group Scanner class for discovery
+- [x] 3. Implement group discovery and access management
+  - [x] 3.1 Create Group Scanner class for discovery
     - Implement group/channel enumeration
     - Handle access permissions and restrictions
     - Display group information with metadata
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-  - [ ] 3.2 Write property test for group discovery
+  - [x] 3.2 Write property test for group discovery
     - **Property 3: Group discovery completeness**
     - **Validates: Requirements 2.1, 2.2**
 
-  - [ ] 3.3 Write property test for access permission handling
+  - [x] 3.3 Write property test for access permission handling
     - **Property 4: Access permission graceful handling**
     - **Validates: Requirements 2.3, 2.4**
 
-  - [ ] 3.4 Write unit tests for group scanner
+  - [x] 3.4 Write unit tests for group scanner
     - Test group enumeration with known groups
     - Test permission error handling
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
