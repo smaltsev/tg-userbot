@@ -52,7 +52,7 @@ This implementation plan breaks down the Telegram Group Scanner into discrete co
     - Test permission error handling
     - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
 
-- [ ] 4. Checkpoint - Authentication and group discovery
+- [x] 4. Checkpoint - Authentication and group discovery
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 5. Implement message processing and extraction

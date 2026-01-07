@@ -78,23 +78,34 @@ class TestGroupScannerProperties:
                 entity.participants_count = member_count
                 entity.megagroup = is_megagroup
                 entity.access_hash = abs(hash(title)) % (10**10)
+                
+                # For channels, username determines privacy
+                expected_username = username
+                expected_is_private = not username
             else:
-                # Create Chat entity mock
+                # Create Chat entity mock - regular chats don't have usernames
                 entity = MagicMock(spec=Chat)
                 entity.id = group_id
                 entity.title = title
                 entity.participants_count = member_count
                 entity.access_hash = abs(hash(title)) % (10**10)
+                # Chat entities don't have username attribute
+                if hasattr(entity, 'username'):
+                    delattr(entity, 'username')
+                
+                # For regular chats, username is always None and they're always private
+                expected_username = None
+                expected_is_private = True
             
             mock_dialogs.append(MockDialog(entity))
             
-            # Create expected group info
+            # Create expected group info based on actual implementation logic
             expected_group = TelegramGroup(
                 id=group_id,
                 title=title,
-                username=username,
+                username=expected_username,
                 member_count=member_count,
-                is_private=not username if is_channel else True,
+                is_private=expected_is_private,
                 access_hash=entity.access_hash,
                 is_channel=is_channel and not is_megagroup,
                 is_megagroup=is_megagroup if is_channel else False
