@@ -4,12 +4,18 @@ Feature: telegram-group-scanner
 """
 
 import pytest
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 from hypothesis import given, strategies as st, settings, HealthCheck
 from telegram_scanner.scanner import GroupScanner, TelegramGroup
 from telegram_scanner.auth import AuthenticationManager
 from telegram_scanner.config import ScannerConfig
+from telegram_scanner.processor import MessageProcessor
+from telegram_scanner.filter import RelevanceFilter
+from telegram_scanner.storage import StorageManager
+from telegram_scanner.models import TelegramMessage
 from telethon.tl.types import Channel, Chat
+from datetime import datetime
 
 
 class MockDialog:
@@ -160,3 +166,208 @@ class TestGroupScannerProperties:
             assert discovered_group.member_count is not None
             assert discovered_group.is_private is not None
             assert discovered_group.access_hash is not None
+
+    @given(
+        messages_data=st.lists(
+            st.tuples(
+                st.integers(min_value=1, max_value=999999999),  # message_id
+                st.text(min_size=0, max_size=200),  # content
+                st.integers(min_value=1, max_value=999999999),  # group_id
+                st.text(min_size=1, max_size=50),  # group_name
+                st.integers(min_value=1, max_value=999999999),  # sender_id
+                st.text(min_size=1, max_size=30),  # sender_username
+                st.floats(min_value=0.0, max_value=1.0)  # processing_delay
+            ),
+            min_size=1,
+            max_size=5
+        )
+    )
+    @settings(max_examples=100, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+    @pytest.mark.asyncio
+    async def test_real_time_processing_consistency(self, messages_data):
+        """
+        Property 6: Real-time processing consistency
+        For any new message arriving in a monitored group, the processing time and extracted data 
+        should be consistent regardless of message order or timing.
+        **Feature: telegram-group-scanner, Property 6: Real-time processing consistency**
+        **Validates: Requirements 3.2**
+        """
+        # Create config and dependencies
+        sample_config = ScannerConfig(api_id="123456", api_hash="test_hash")
+        
+        mock_auth_manager = MagicMock(spec=AuthenticationManager)
+        mock_auth_manager.is_authenticated.return_value = True
+        
+        mock_client = AsyncMock()
+        mock_auth_manager.get_client = AsyncMock(return_value=mock_client)
+        
+        # Create mock storage manager
+        mock_storage_manager = AsyncMock(spec=StorageManager)
+        mock_storage_manager.store_message = AsyncMock()
+        
+        # Create mock message processor
+        mock_message_processor = AsyncMock(spec=MessageProcessor)
+        mock_message_processor.storage_manager = mock_storage_manager
+        
+        # Create mock relevance filter
+        mock_relevance_filter = AsyncMock(spec=RelevanceFilter)
+        mock_relevance_filter.is_relevant = AsyncMock(return_value=True)
+        
+        # Ensure unique message IDs
+        seen_ids = set()
+        unique_messages_data = []
+        for msg_data in messages_data:
+            msg_id = msg_data[0]
+            if msg_id not in seen_ids:
+                seen_ids.add(msg_id)
+                unique_messages_data.append(msg_data)
+        
+        if not unique_messages_data:
+            return  # Skip if no unique messages
+        
+        # Create mock messages and expected processed messages
+        mock_messages = []
+        expected_processed_messages = []
+        
+        for msg_id, content, group_id, group_name, sender_id, sender_username, delay in unique_messages_data:
+            # Create mock Telegram message
+            mock_message = MagicMock()
+            mock_message.id = msg_id
+            mock_message.message = content
+            mock_message.date = datetime.now()
+            mock_message.sender_id = sender_id
+            
+            # Mock peer_id for group identification
+            mock_peer_id = MagicMock()
+            mock_peer_id.channel_id = group_id
+            mock_message.peer_id = mock_peer_id
+            
+            # Mock sender
+            mock_sender = MagicMock()
+            mock_sender.username = sender_username
+            mock_message.sender = mock_sender
+            
+            # Mock chat
+            mock_chat = MagicMock()
+            mock_chat.title = group_name
+            mock_message.chat = mock_chat
+            
+            mock_messages.append((mock_message, delay))
+            
+            # Create expected processed message
+            expected_message = TelegramMessage(
+                id=msg_id,
+                timestamp=mock_message.date,
+                group_id=group_id,
+                group_name=group_name,
+                sender_id=sender_id,
+                sender_username=sender_username,
+                content=content
+            )
+            expected_processed_messages.append(expected_message)
+        
+        # Set up message processor to return expected messages
+        def mock_process_message(message, client):
+            for expected_msg in expected_processed_messages:
+                if expected_msg.id == message.id:
+                    return expected_msg
+            return None
+        
+        mock_message_processor.process_message = AsyncMock(side_effect=mock_process_message)
+        
+        # Create scanner with discovered groups
+        scanner = GroupScanner(
+            sample_config, 
+            mock_auth_manager, 
+            mock_message_processor, 
+            mock_relevance_filter
+        )
+        
+        # Add discovered groups that match our test messages
+        test_groups = []
+        for _, _, group_id, group_name, _, _, _ in unique_messages_data:
+            if not any(g.id == group_id for g in test_groups):
+                test_group = TelegramGroup(
+                    id=group_id,
+                    title=group_name,
+                    username=None,
+                    member_count=100,
+                    is_private=True,
+                    access_hash=12345
+                )
+                test_groups.append(test_group)
+        
+        scanner._discovered_groups = test_groups
+        
+        # Track processing results
+        processed_messages = []
+        processing_times = []
+        
+        # Override handle_new_message to track processing
+        original_handle_new_message = scanner.handle_new_message
+        
+        async def tracked_handle_new_message(message, client):
+            start_time = asyncio.get_event_loop().time()
+            await original_handle_new_message(message, client)
+            end_time = asyncio.get_event_loop().time()
+            
+            processing_time = end_time - start_time
+            processing_times.append(processing_time)
+            
+            # Track which message was processed
+            processed_messages.append(message.id)
+        
+        scanner.handle_new_message = tracked_handle_new_message
+        
+        # Process messages with different timing patterns
+        tasks = []
+        for mock_message, delay in mock_messages:
+            async def process_with_delay(msg, d):
+                await asyncio.sleep(d)
+                await scanner.handle_new_message(msg, mock_client)
+            
+            task = asyncio.create_task(process_with_delay(mock_message, delay))
+            tasks.append(task)
+        
+        # Wait for all processing to complete
+        await asyncio.gather(*tasks)
+        
+        # Verify consistency properties
+        
+        # 1. All messages should be processed
+        assert len(processed_messages) == len(unique_messages_data), \
+            f"Expected {len(unique_messages_data)} messages processed, got {len(processed_messages)}"
+        
+        # 2. All expected messages should be processed (regardless of order)
+        expected_ids = {msg_id for msg_id, _, _, _, _, _, _ in unique_messages_data}
+        processed_ids = set(processed_messages)
+        assert processed_ids == expected_ids, \
+            f"Processed message IDs {processed_ids} don't match expected {expected_ids}"
+        
+        # 3. Message processor should be called for each message
+        assert mock_message_processor.process_message.call_count == len(unique_messages_data), \
+            f"Expected {len(unique_messages_data)} process_message calls, got {mock_message_processor.process_message.call_count}"
+        
+        # 4. Relevance filter should be called for each processed message
+        assert mock_relevance_filter.is_relevant.call_count == len(unique_messages_data), \
+            f"Expected {len(unique_messages_data)} is_relevant calls, got {mock_relevance_filter.is_relevant.call_count}"
+        
+        # 5. Storage should be called for each relevant message
+        assert mock_storage_manager.store_message.call_count == len(unique_messages_data), \
+            f"Expected {len(unique_messages_data)} store_message calls, got {mock_storage_manager.store_message.call_count}"
+        
+        # 6. Processing times should be reasonable (not affected by message timing)
+        # All processing times should be relatively small and consistent
+        if processing_times:
+            max_processing_time = max(processing_times)
+            # Processing should complete quickly (within 1 second per message)
+            assert max_processing_time < 1.0, \
+                f"Processing time {max_processing_time} exceeds reasonable limit"
+            
+            # Processing time variance should be reasonable
+            if len(processing_times) > 1:
+                avg_time = sum(processing_times) / len(processing_times)
+                time_variance = sum((t - avg_time) ** 2 for t in processing_times) / len(processing_times)
+                # Variance should be reasonable (not wildly inconsistent)
+                assert time_variance < 0.1, \
+                    f"Processing time variance {time_variance} indicates inconsistent performance"

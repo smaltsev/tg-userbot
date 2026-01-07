@@ -3,12 +3,18 @@ Unit tests for group scanner functionality.
 """
 
 import pytest
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 from telegram_scanner.scanner import GroupScanner, TelegramGroup
 from telegram_scanner.auth import AuthenticationManager
 from telegram_scanner.config import ScannerConfig
+from telegram_scanner.processor import MessageProcessor
+from telegram_scanner.filter import RelevanceFilter
+from telegram_scanner.storage import StorageManager
+from telegram_scanner.models import TelegramMessage
 from telethon.tl.types import Channel, Chat
 from telethon.errors import ChannelPrivateError, ChatAdminRequiredError, FloodWaitError
+from datetime import datetime
 
 
 class TestGroupScanner:
@@ -28,7 +34,8 @@ class TestGroupScanner:
         auth_manager = MagicMock(spec=AuthenticationManager)
         auth_manager.is_authenticated.return_value = True
         
-        mock_client = AsyncMock()
+        mock_client = MagicMock()
+        mock_client.on = MagicMock(return_value=lambda func: func)  # Mock decorator
         auth_manager.get_client = AsyncMock(return_value=mock_client)
         
         return auth_manager
@@ -347,3 +354,356 @@ class TestGroupScanner:
         channel = next(g for g in discovered_groups if g.id == 2)
         assert channel.is_megagroup is False
         assert channel.is_channel is True
+
+    @pytest.mark.asyncio
+    async def test_start_monitoring_success(self, sample_config, mock_auth_manager):
+        """Test successful start of real-time monitoring."""
+        # Create mock dependencies
+        mock_storage_manager = AsyncMock(spec=StorageManager)
+        mock_message_processor = AsyncMock(spec=MessageProcessor)
+        mock_message_processor.storage_manager = mock_storage_manager
+        mock_relevance_filter = AsyncMock(spec=RelevanceFilter)
+        
+        # Create scanner with dependencies
+        scanner = GroupScanner(
+            sample_config, 
+            mock_auth_manager, 
+            mock_message_processor, 
+            mock_relevance_filter
+        )
+        
+        # Add discovered groups
+        test_group = TelegramGroup(
+            id=1, title="Test Group", username=None, 
+            member_count=100, is_private=True, access_hash=12345
+        )
+        scanner._discovered_groups = [test_group]
+        
+        # Start monitoring
+        await scanner.start_monitoring()
+        
+        # Verify monitoring state
+        assert scanner.is_monitoring() is True
+        assert len(scanner._processing_tasks) > 0
+        
+        # Clean up
+        await scanner.stop_monitoring()
+
+    @pytest.mark.asyncio
+    async def test_start_monitoring_not_authenticated(self, sample_config):
+        """Test start monitoring when not authenticated."""
+        auth_manager = MagicMock(spec=AuthenticationManager)
+        auth_manager.is_authenticated.return_value = False
+        
+        scanner = GroupScanner(sample_config, auth_manager)
+        
+        with pytest.raises(ValueError) as exc_info:
+            await scanner.start_monitoring()
+        
+        assert "Authentication required" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_start_monitoring_no_client(self, sample_config):
+        """Test start monitoring when client is unavailable."""
+        auth_manager = MagicMock(spec=AuthenticationManager)
+        auth_manager.is_authenticated.return_value = True
+        auth_manager.get_client = AsyncMock(return_value=None)
+        
+        scanner = GroupScanner(sample_config, auth_manager)
+        
+        with pytest.raises(ValueError) as exc_info:
+            await scanner.start_monitoring()
+        
+        assert "Telegram client not available" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_start_monitoring_no_groups(self, sample_config, mock_auth_manager):
+        """Test start monitoring with no discovered groups."""
+        scanner = GroupScanner(sample_config, mock_auth_manager)
+        
+        # Start monitoring without discovered groups
+        await scanner.start_monitoring()
+        
+        # Should not start monitoring (returns early)
+        assert scanner.is_monitoring() is False  # State is not set when no groups
+
+    @pytest.mark.asyncio
+    async def test_start_monitoring_already_active(self, sample_config, mock_auth_manager):
+        """Test start monitoring when already active."""
+        scanner = GroupScanner(sample_config, mock_auth_manager)
+        
+        # Add discovered groups
+        test_group = TelegramGroup(
+            id=1, title="Test Group", username=None, 
+            member_count=100, is_private=True, access_hash=12345
+        )
+        scanner._discovered_groups = [test_group]
+        
+        # Start monitoring first time
+        await scanner.start_monitoring()
+        assert scanner.is_monitoring() is True
+        
+        # Try to start again - should not raise error
+        await scanner.start_monitoring()
+        assert scanner.is_monitoring() is True
+        
+        # Clean up
+        await scanner.stop_monitoring()
+
+    @pytest.mark.asyncio
+    async def test_stop_monitoring(self, sample_config, mock_auth_manager):
+        """Test stopping real-time monitoring."""
+        scanner = GroupScanner(sample_config, mock_auth_manager)
+        
+        # Add discovered groups
+        test_group = TelegramGroup(
+            id=1, title="Test Group", username=None, 
+            member_count=100, is_private=True, access_hash=12345
+        )
+        scanner._discovered_groups = [test_group]
+        
+        # Start monitoring
+        await scanner.start_monitoring()
+        assert scanner.is_monitoring() is True
+        assert len(scanner._processing_tasks) > 0
+        
+        # Stop monitoring
+        await scanner.stop_monitoring()
+        assert scanner.is_monitoring() is False
+        assert len(scanner._processing_tasks) == 0
+
+    @pytest.mark.asyncio
+    async def test_stop_monitoring_not_active(self, sample_config, mock_auth_manager):
+        """Test stop monitoring when not active."""
+        scanner = GroupScanner(sample_config, mock_auth_manager)
+        
+        # Stop monitoring when not active - should not raise error
+        await scanner.stop_monitoring()
+        assert scanner.is_monitoring() is False
+
+    @pytest.mark.asyncio
+    async def test_handle_new_message_success(self, sample_config, mock_auth_manager):
+        """Test successful message event processing."""
+        # Create mock dependencies
+        mock_storage_manager = AsyncMock(spec=StorageManager)
+        mock_storage_manager.store_message = AsyncMock()
+        
+        mock_message_processor = AsyncMock(spec=MessageProcessor)
+        mock_message_processor.storage_manager = mock_storage_manager
+        
+        mock_relevance_filter = AsyncMock(spec=RelevanceFilter)
+        mock_relevance_filter.is_relevant = AsyncMock(return_value=True)
+        
+        # Create test message
+        test_message = TelegramMessage(
+            id=123,
+            timestamp=datetime.now(),
+            group_id=1,
+            group_name="Test Group",
+            sender_id=456,
+            sender_username="testuser",
+            content="Test message content"
+        )
+        
+        mock_message_processor.process_message = AsyncMock(return_value=test_message)
+        
+        # Create scanner
+        scanner = GroupScanner(
+            sample_config, 
+            mock_auth_manager, 
+            mock_message_processor, 
+            mock_relevance_filter
+        )
+        
+        # Create mock Telegram message
+        mock_telegram_message = MagicMock()
+        mock_telegram_message.id = 123
+        mock_client = AsyncMock()
+        
+        # Handle the message
+        await scanner.handle_new_message(mock_telegram_message, mock_client)
+        
+        # Verify processing chain
+        mock_message_processor.process_message.assert_called_once_with(mock_telegram_message, mock_client)
+        mock_relevance_filter.is_relevant.assert_called_once_with(test_message)
+        mock_storage_manager.store_message.assert_called_once_with(test_message)
+
+    @pytest.mark.asyncio
+    async def test_handle_new_message_not_relevant(self, sample_config, mock_auth_manager):
+        """Test message handling when message is not relevant."""
+        # Create mock dependencies
+        mock_storage_manager = AsyncMock(spec=StorageManager)
+        mock_storage_manager.store_message = AsyncMock()
+        
+        mock_message_processor = AsyncMock(spec=MessageProcessor)
+        mock_message_processor.storage_manager = mock_storage_manager
+        
+        mock_relevance_filter = AsyncMock(spec=RelevanceFilter)
+        mock_relevance_filter.is_relevant = AsyncMock(return_value=False)  # Not relevant
+        
+        # Create test message
+        test_message = TelegramMessage(
+            id=123,
+            timestamp=datetime.now(),
+            group_id=1,
+            group_name="Test Group",
+            sender_id=456,
+            sender_username="testuser",
+            content="Test message content"
+        )
+        
+        mock_message_processor.process_message = AsyncMock(return_value=test_message)
+        
+        # Create scanner
+        scanner = GroupScanner(
+            sample_config, 
+            mock_auth_manager, 
+            mock_message_processor, 
+            mock_relevance_filter
+        )
+        
+        # Create mock Telegram message
+        mock_telegram_message = MagicMock()
+        mock_telegram_message.id = 123
+        mock_client = AsyncMock()
+        
+        # Handle the message
+        await scanner.handle_new_message(mock_telegram_message, mock_client)
+        
+        # Verify processing chain - storage should not be called
+        mock_message_processor.process_message.assert_called_once_with(mock_telegram_message, mock_client)
+        mock_relevance_filter.is_relevant.assert_called_once_with(test_message)
+        mock_storage_manager.store_message.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_handle_new_message_processing_failure(self, sample_config, mock_auth_manager):
+        """Test message handling when processing fails."""
+        # Create mock dependencies
+        mock_message_processor = AsyncMock(spec=MessageProcessor)
+        mock_message_processor.process_message = AsyncMock(return_value=None)  # Processing failed
+        
+        # Create scanner
+        scanner = GroupScanner(
+            sample_config, 
+            mock_auth_manager, 
+            mock_message_processor
+        )
+        
+        # Create mock Telegram message
+        mock_telegram_message = MagicMock()
+        mock_telegram_message.id = 123
+        mock_client = AsyncMock()
+        
+        # Handle the message - should not raise error
+        await scanner.handle_new_message(mock_telegram_message, mock_client)
+        
+        # Verify processing was attempted
+        mock_message_processor.process_message.assert_called_once_with(mock_telegram_message, mock_client)
+
+    @pytest.mark.asyncio
+    async def test_handle_new_message_no_processor(self, sample_config, mock_auth_manager):
+        """Test message handling when no message processor is available."""
+        # Create scanner without message processor
+        scanner = GroupScanner(sample_config, mock_auth_manager)
+        
+        # Create mock Telegram message
+        mock_telegram_message = MagicMock()
+        mock_telegram_message.id = 123
+        mock_client = AsyncMock()
+        
+        # Handle the message - should not raise error
+        await scanner.handle_new_message(mock_telegram_message, mock_client)
+        
+        # Should complete without error (just logs warning)
+
+    @pytest.mark.asyncio
+    async def test_concurrent_message_handling(self, sample_config, mock_auth_manager):
+        """Test concurrent message handling."""
+        # Create mock dependencies
+        mock_storage_manager = AsyncMock(spec=StorageManager)
+        mock_storage_manager.store_message = AsyncMock()
+        
+        mock_message_processor = AsyncMock(spec=MessageProcessor)
+        mock_message_processor.storage_manager = mock_storage_manager
+        
+        mock_relevance_filter = AsyncMock(spec=RelevanceFilter)
+        mock_relevance_filter.is_relevant = AsyncMock(return_value=True)
+        
+        # Create test messages
+        test_messages = []
+        for i in range(3):
+            test_message = TelegramMessage(
+                id=i + 1,
+                timestamp=datetime.now(),
+                group_id=1,
+                group_name="Test Group",
+                sender_id=456,
+                sender_username="testuser",
+                content=f"Test message {i + 1}"
+            )
+            test_messages.append(test_message)
+        
+        # Mock processor to return different messages based on input
+        def mock_process_message(message, client):
+            for test_msg in test_messages:
+                if test_msg.id == message.id:
+                    return test_msg
+            return None
+        
+        mock_message_processor.process_message = AsyncMock(side_effect=mock_process_message)
+        
+        # Create scanner
+        scanner = GroupScanner(
+            sample_config, 
+            mock_auth_manager, 
+            mock_message_processor, 
+            mock_relevance_filter
+        )
+        
+        # Create mock Telegram messages
+        mock_telegram_messages = []
+        for i in range(3):
+            mock_msg = MagicMock()
+            mock_msg.id = i + 1
+            mock_telegram_messages.append(mock_msg)
+        
+        mock_client = AsyncMock()
+        
+        # Handle messages concurrently
+        tasks = []
+        for mock_msg in mock_telegram_messages:
+            task = asyncio.create_task(scanner.handle_new_message(mock_msg, mock_client))
+            tasks.append(task)
+        
+        # Wait for all to complete
+        await asyncio.gather(*tasks)
+        
+        # Verify all messages were processed
+        assert mock_message_processor.process_message.call_count == 3
+        assert mock_relevance_filter.is_relevant.call_count == 3
+        assert mock_storage_manager.store_message.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_message_processing_error_handling(self, sample_config, mock_auth_manager):
+        """Test error handling during message processing."""
+        # Create mock dependencies that raise errors
+        mock_message_processor = AsyncMock(spec=MessageProcessor)
+        mock_message_processor.process_message = AsyncMock(side_effect=Exception("Processing error"))
+        
+        # Create scanner
+        scanner = GroupScanner(
+            sample_config, 
+            mock_auth_manager, 
+            mock_message_processor
+        )
+        
+        # Create mock Telegram message
+        mock_telegram_message = MagicMock()
+        mock_telegram_message.id = 123
+        mock_client = AsyncMock()
+        
+        # Handle the message - should not raise error (should be caught and logged)
+        await scanner.handle_new_message(mock_telegram_message, mock_client)
+        
+        # Verify processing was attempted
+        mock_message_processor.process_message.assert_called_once_with(mock_telegram_message, mock_client)

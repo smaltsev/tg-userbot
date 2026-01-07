@@ -5,6 +5,7 @@ Relevance filtering for message content.
 import logging
 from typing import List
 from .config import ScannerConfig
+from .models import TelegramMessage
 
 logger = logging.getLogger(__name__)
 
@@ -16,11 +17,12 @@ class RelevanceFilter:
         """Initialize relevance filter with configuration."""
         self.config = config
         
-    async def is_relevant(self, content: str) -> bool:
+    async def is_relevant(self, message: TelegramMessage) -> bool:
         """Main relevance checking method."""
         # Implementation will be added in task 7
-        logger.info("Relevance filter initialized")
-        return False
+        # For now, return True to allow all messages through
+        logger.debug(f"Checking relevance for message {message.id}")
+        return True
         
     async def match_keywords(self, content: str) -> List[str]:
         """Keyword-based matching."""

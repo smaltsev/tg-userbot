@@ -55,7 +55,19 @@ class TelegramScanner:
         logger.info(f"Discovered {len(groups)} accessible groups")
         
         # Start monitoring
-        await self.group_scanner.start_monitoring()
+        try:
+            await self.group_scanner.start_monitoring()
+            
+            # Keep the application running
+            logger.info("Monitoring active. Press Ctrl+C to stop...")
+            while self.group_scanner.is_monitoring():
+                await asyncio.sleep(1)
+                
+        except KeyboardInterrupt:
+            logger.info("Shutdown requested by user")
+        finally:
+            if self.group_scanner and self.group_scanner.is_monitoring():
+                await self.group_scanner.stop_monitoring()
 
 
 if __name__ == "__main__":

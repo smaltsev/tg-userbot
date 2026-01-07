@@ -3,10 +3,12 @@ Group discovery and message scanning functionality.
 """
 
 import logging
+import asyncio
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 from telethon.tl.types import Channel, Chat, User
 from telethon.errors import ChannelPrivateError, ChatAdminRequiredError, FloodWaitError
+from telethon import events
 from .config import ScannerConfig
 from .auth import AuthenticationManager
 from .processor import MessageProcessor
@@ -41,6 +43,10 @@ class GroupScanner:
         self.message_processor = message_processor
         self.relevance_filter = relevance_filter
         self._discovered_groups: List[TelegramGroup] = []
+        self._monitoring = False
+        self._monitoring_task: Optional[asyncio.Task] = None
+        self._message_queue = asyncio.Queue()
+        self._processing_tasks: List[asyncio.Task] = []
         
     async def discover_groups(self) -> List[TelegramGroup]:
         """
@@ -212,15 +218,146 @@ class GroupScanner:
         
     async def start_monitoring(self):
         """Begin real-time message monitoring."""
-        # Implementation will be added in task 6
-        pass
+        if not self.auth_manager.is_authenticated():
+            raise ValueError("Authentication required before starting monitoring")
+            
+        if self._monitoring:
+            logger.warning("Monitoring is already active")
+            return
+            
+        client = await self.auth_manager.get_client()
+        if not client:
+            raise ValueError("Telegram client not available")
+            
+        if not self._discovered_groups:
+            logger.warning("No groups discovered. Run discover_groups() first")
+            return
+            
+        logger.info("Starting real-time message monitoring...")
+        self._monitoring = True
+        
+        # Set up event handler for new messages
+        @client.on(events.NewMessage)
+        async def new_message_handler(event):
+            """Handle new message events."""
+            try:
+                # Check if message is from a monitored group
+                if hasattr(event.message, 'peer_id') and event.message.peer_id:
+                    group_id = None
+                    if hasattr(event.message.peer_id, 'channel_id'):
+                        group_id = event.message.peer_id.channel_id
+                    elif hasattr(event.message.peer_id, 'chat_id'):
+                        group_id = event.message.peer_id.chat_id
+                    
+                    if group_id and any(group.id == group_id for group in self._discovered_groups):
+                        # Add message to processing queue for consistent handling
+                        await self._message_queue.put((event.message, client))
+                        logger.debug(f"Queued new message {event.message.id} from group {group_id}")
+                        
+            except Exception as e:
+                logger.error(f"Error in new message handler: {e}")
+        
+        # Start message processing workers
+        num_workers = min(3, len(self._discovered_groups))  # Limit concurrent processing
+        for i in range(num_workers):
+            task = asyncio.create_task(self._message_processing_worker(f"worker-{i}"))
+            self._processing_tasks.append(task)
+        
+        logger.info(f"Real-time monitoring started with {num_workers} processing workers")
+        
+    async def stop_monitoring(self):
+        """Stop real-time message monitoring."""
+        if not self._monitoring:
+            logger.warning("Monitoring is not active")
+            return
+            
+        logger.info("Stopping real-time message monitoring...")
+        self._monitoring = False
+        
+        # Cancel all processing tasks
+        for task in self._processing_tasks:
+            if not task.done():
+                task.cancel()
+        
+        # Wait for tasks to complete
+        if self._processing_tasks:
+            await asyncio.gather(*self._processing_tasks, return_exceptions=True)
+        
+        self._processing_tasks.clear()
+        
+        # Clear any remaining messages in queue
+        while not self._message_queue.empty():
+            try:
+                self._message_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+                
+        logger.info("Real-time monitoring stopped")
+        
+    async def _message_processing_worker(self, worker_name: str):
+        """Worker task to process messages from the queue."""
+        logger.debug(f"Message processing worker {worker_name} started")
+        
+        while self._monitoring:
+            try:
+                # Wait for message with timeout to allow periodic checks
+                message, client = await asyncio.wait_for(
+                    self._message_queue.get(), 
+                    timeout=1.0
+                )
+                
+                # Process the message
+                await self.handle_new_message(message, client)
+                
+            except asyncio.TimeoutError:
+                # Timeout is expected, continue monitoring
+                continue
+            except asyncio.CancelledError:
+                logger.debug(f"Worker {worker_name} cancelled")
+                break
+            except Exception as e:
+                logger.error(f"Error in worker {worker_name}: {e}")
+                # Continue processing other messages
+                continue
+                
+        logger.debug(f"Message processing worker {worker_name} stopped")
+        
+    async def handle_new_message(self, message, client):
+        """Process incoming messages."""
+        try:
+            if not self.message_processor:
+                logger.warning("No message processor available")
+                return
+                
+            # Process the message
+            processed_message = await self.message_processor.process_message(message, client)
+            if not processed_message:
+                logger.debug(f"Failed to process message {message.id}")
+                return
+            
+            # Apply relevance filtering if available
+            is_relevant = True
+            if self.relevance_filter:
+                is_relevant = await self.relevance_filter.is_relevant(processed_message)
+            
+            if is_relevant:
+                logger.info(f"Relevant message found: {processed_message.id} from {processed_message.group_name}")
+                
+                # Store the message if storage manager is available
+                if hasattr(self.message_processor, 'storage_manager') and self.message_processor.storage_manager:
+                    await self.message_processor.storage_manager.store_message(processed_message)
+            else:
+                logger.debug(f"Message {processed_message.id} not relevant, skipping storage")
+                
+        except Exception as e:
+            logger.error(f"Error handling new message {message.id}: {e}")
+            # Continue processing - don't let one message failure stop monitoring
+            
+    def is_monitoring(self) -> bool:
+        """Check if real-time monitoring is active."""
+        return self._monitoring
         
     async def scan_history(self):
         """Process historical messages."""
         # Implementation will be added in task 5
-        pass
-        
-    async def handle_new_message(self, message):
-        """Process incoming messages."""
-        # Implementation will be added in task 6
         pass
