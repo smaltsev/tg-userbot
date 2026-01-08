@@ -9,5 +9,6 @@ __version__ = "1.0.0"
 __author__ = "Telegram Scanner Team"
 
 from .main import TelegramScanner
+from .command_interface import CommandInterface, ScannerState, ScannerStatus, ScanningReport
 
-__all__ = ["TelegramScanner"]
+__all__ = ["TelegramScanner", "CommandInterface", "ScannerState", "ScannerStatus", "ScanningReport"]

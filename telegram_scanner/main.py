@@ -4,6 +4,7 @@ Main application entry point for Telegram Group Scanner.
 
 import asyncio
 import logging
+import json
 from typing import Optional
 
 from .config import ConfigManager
@@ -12,6 +13,7 @@ from .scanner import GroupScanner
 from .processor import MessageProcessor
 from .filter import RelevanceFilter
 from .storage import StorageManager
+from .command_interface import CommandInterface
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,7 @@ class TelegramScanner:
         self.message_processor: Optional[MessageProcessor] = None
         self.relevance_filter: Optional[RelevanceFilter] = None
         self.storage_manager: Optional[StorageManager] = None
+        self.command_interface: Optional[CommandInterface] = None
         
     async def initialize(self):
         """Initialize all components with configuration."""
@@ -42,6 +45,66 @@ class TelegramScanner:
             self.message_processor, 
             self.relevance_filter
         )
+        
+        # Initialize command interface
+        self.command_interface = CommandInterface(self)
+        
+        # Set command interface reference in group scanner for statistics
+        self.group_scanner.set_command_interface(self.command_interface)
+        
+    async def run_with_commands(self):
+        """Run the application with command interface support."""
+        await self.initialize()
+        
+        logger.info("Telegram Scanner with Command Interface")
+        logger.info("Available commands: start, stop, pause, resume, status, report, quit")
+        
+        while True:
+            try:
+                command = input("\nEnter command: ").strip().lower()
+                
+                if command == "start":
+                    result = await self.command_interface.start_scanning()
+                    print(f"Result: {result}")
+                    
+                elif command == "stop":
+                    result = await self.command_interface.stop_scanning()
+                    print(f"Result: {result}")
+                    
+                elif command == "pause":
+                    result = await self.command_interface.pause_scanning()
+                    print(f"Result: {result}")
+                    
+                elif command == "resume":
+                    result = await self.command_interface.resume_scanning()
+                    print(f"Result: {result}")
+                    
+                elif command == "status":
+                    status = await self.command_interface.get_status()
+                    print(f"Status: {json.dumps(status.to_dict(), indent=2)}")
+                    
+                elif command == "report":
+                    report = await self.command_interface.generate_report()
+                    print(f"Report: {json.dumps(report.to_dict(), indent=2)}")
+                    
+                elif command in ["quit", "exit", "q"]:
+                    # Stop scanner if running
+                    if self.command_interface.get_current_state().value != "stopped":
+                        await self.command_interface.stop_scanning()
+                    break
+                    
+                else:
+                    print("Unknown command. Available: start, stop, pause, resume, status, report, quit")
+                    
+            except KeyboardInterrupt:
+                logger.info("Shutdown requested by user")
+                if self.command_interface.get_current_state().value != "stopped":
+                    await self.command_interface.stop_scanning()
+                break
+            except Exception as e:
+                logger.error(f"Error processing command: {e}")
+                
+        logger.info("Application terminated")
         
     async def run(self):
         """Main application entry point."""
@@ -73,4 +136,5 @@ class TelegramScanner:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     scanner = TelegramScanner()
-    asyncio.run(scanner.run())
+    # Use command interface by default
+    asyncio.run(scanner.run_with_commands())

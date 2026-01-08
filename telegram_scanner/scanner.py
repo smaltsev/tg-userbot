@@ -58,6 +58,11 @@ class GroupScanner:
         self._message_queue = asyncio.Queue()
         self._processing_tasks: List[asyncio.Task] = []
         self.error_handler = ErrorHandler(max_retries=3)
+        self._command_interface = None
+        
+    def set_command_interface(self, command_interface):
+        """Set reference to command interface for statistics tracking."""
+        self._command_interface = command_interface
         
     async def discover_groups(self) -> List[TelegramGroup]:
         """
@@ -390,8 +395,21 @@ class GroupScanner:
             
             # Apply relevance filtering if available
             is_relevant = True
+            keywords_matched = []
             if self.relevance_filter:
                 is_relevant = await self.relevance_filter.is_relevant(processed_message)
+                # Get matched keywords if available
+                if hasattr(self.relevance_filter, '_last_matched_keywords'):
+                    keywords_matched = getattr(self.relevance_filter, '_last_matched_keywords', [])
+            
+            # Update command interface statistics if available
+            if hasattr(self, '_command_interface') and self._command_interface:
+                self._command_interface.update_message_stats(
+                    processed_message.group_id,
+                    processed_message.group_name,
+                    is_relevant,
+                    keywords_matched
+                )
             
             if is_relevant:
                 logger.info(f"Relevant message found: {processed_message.id} from {processed_message.group_name}")

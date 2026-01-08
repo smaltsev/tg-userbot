@@ -157,19 +157,19 @@ This implementation plan breaks down the Telegram Group Scanner into discrete co
     - Test network failure recovery
     - _Requirements: 5.4, 6.1, 6.2, 6.3, 6.4, 6.5_
 
-- [ ] 11. Implement command and control interface
-  - [ ] 11.1 Create command interface
+- [x] 11. Implement command and control interface
+  - [x] 11.1 Create command interface
     - Implement start, stop, pause commands
     - Add status reporting functionality
     - Implement report generation
     - Ensure command state consistency
     - _Requirements: 7.2, 7.4, 7.5_
 
-  - [ ] 11.2 Write property test for command state consistency
+  - [x] 11.2 Write property test for command state consistency
     - **Property 13: Command state consistency**
     - **Validates: Requirements 7.2, 7.4**
 
-  - [ ] 11.3 Write unit tests for command interface
+  - [x] 11.3 Write unit tests for command interface
     - Test command execution with known sequences
     - Test status reporting accuracy
     - Test report generation
