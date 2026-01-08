@@ -175,15 +175,15 @@ This implementation plan breaks down the Telegram Group Scanner into discrete co
     - Test report generation
     - _Requirements: 7.2, 7.4, 7.5_
 
-- [ ] 12. Integration and main application
-  - [ ] 12.1 Create main application entry point
+- [x] 12. Integration and main application
+  - [x] 12.1 Create main application entry point
     - Wire all components together
     - Implement configuration loading and management
     - Add command-line interface
     - Ensure proper async event loop management
     - _Requirements: All requirements integration_
 
-  - [ ] 12.2 Write integration tests
+  - [x] 12.2 Write integration tests
     - Test end-to-end message scanning flow
     - Test configuration management integration
     - Test error handling across components

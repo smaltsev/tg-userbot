@@ -30,7 +30,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "telegram-scanner=telegram_scanner.main:main",
+            "telegram-scanner=telegram_scanner.cli:cli_main",
         ],
     },
 )
