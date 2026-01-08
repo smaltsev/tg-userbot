@@ -13,6 +13,16 @@ from .config import ScannerConfig
 from .auth import AuthenticationManager
 from .processor import MessageProcessor
 from .filter import RelevanceFilter
+from .error_handling import (
+    ErrorHandler,
+    SessionExpiredError,
+    NetworkConnectivityError,
+    MaxRetriesExceededError,
+    default_error_handler,
+    default_rate_limiter,
+    default_health_monitor,
+    handle_message_processing_errors
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,16 +57,19 @@ class GroupScanner:
         self._monitoring_task: Optional[asyncio.Task] = None
         self._message_queue = asyncio.Queue()
         self._processing_tasks: List[asyncio.Task] = []
+        self.error_handler = ErrorHandler(max_retries=3)
         
     async def discover_groups(self) -> List[TelegramGroup]:
         """
-        Retrieve accessible groups/channels.
+        Retrieve accessible groups/channels with comprehensive error handling.
         
         Returns:
             List of TelegramGroup objects with metadata
             
         Raises:
             ValueError: If not authenticated or client unavailable
+            NetworkConnectivityError: If network issues persist
+            SessionExpiredError: If session needs re-authentication
         """
         if not self.auth_manager.is_authenticated():
             raise ValueError("Authentication required before discovering groups")
@@ -64,11 +77,14 @@ class GroupScanner:
         client = await self.auth_manager.get_client()
         if not client:
             raise ValueError("Telegram client not available")
-            
-        discovered_groups = []
         
-        try:
+        async def _discover_groups_impl():
+            discovered_groups = []
+            
             logger.info("Starting group discovery...")
+            
+            # Apply rate limiting
+            await default_rate_limiter.acquire()
             
             # Get all dialogs (conversations)
             async for dialog in client.iter_dialogs():
@@ -77,6 +93,9 @@ class GroupScanner:
                 # Process channels and groups only
                 if isinstance(entity, (Channel, Chat)):
                     try:
+                        # Apply rate limiting for each group
+                        await default_rate_limiter.acquire()
+                        
                         group_info = await self._extract_group_info(entity, client)
                         if group_info:
                             discovered_groups.append(group_info)
@@ -90,6 +109,7 @@ class GroupScanner:
                     except Exception as e:
                         # Log other errors but continue processing
                         logger.error(f"Error processing group {getattr(entity, 'title', 'Unknown')}: {e}")
+                        default_health_monitor.record_failure("group_processing", e)
                         continue
                         
             self._discovered_groups = discovered_groups
@@ -99,13 +119,32 @@ class GroupScanner:
             await self._display_group_info(discovered_groups)
             
             return discovered_groups
+        
+        try:
+            result = await self.error_handler.with_retry(
+                _discover_groups_impl,
+                operation_name="group_discovery"
+            )
+            default_health_monitor.record_success("group_discovery")
+            return result
             
-        except FloodWaitError as e:
-            logger.error(f"Rate limited during group discovery. Wait {e.seconds} seconds")
-            raise ValueError(f"Rate limited. Please wait {e.seconds} seconds before retrying")
+        except SessionExpiredError as e:
+            logger.error(f"Session expired during group discovery: {e}")
+            raise ValueError(f"Session expired. Please re-authenticate: {e}")
+            
+        except NetworkConnectivityError as e:
+            logger.error(f"Network connectivity issues during group discovery: {e}")
+            default_health_monitor.record_failure("group_discovery", e)
+            raise ValueError(f"Network error during group discovery: {e}")
+            
+        except MaxRetriesExceededError as e:
+            logger.error(f"Group discovery failed after multiple attempts: {e}")
+            default_health_monitor.record_failure("group_discovery", e)
+            raise ValueError(f"Group discovery failed: {e}")
             
         except Exception as e:
             logger.error(f"Unexpected error during group discovery: {e}")
+            default_health_monitor.record_failure("group_discovery", e)
             raise ValueError(f"Group discovery failed: {e}")
             
     async def get_discovered_groups(self) -> List[TelegramGroup]:
@@ -133,7 +172,7 @@ class GroupScanner:
         
     async def _extract_group_info(self, entity, client) -> Optional[TelegramGroup]:
         """
-        Extract group information from Telegram entity.
+        Extract group information from Telegram entity with error handling.
         
         Args:
             entity: Telegram Channel or Chat entity
@@ -142,7 +181,7 @@ class GroupScanner:
         Returns:
             TelegramGroup object or None if extraction fails
         """
-        try:
+        async def _extract_impl():
             # Get basic information
             group_id = entity.id
             title = getattr(entity, 'title', 'Unknown')
@@ -186,9 +225,19 @@ class GroupScanner:
                 is_channel=is_channel,
                 is_megagroup=is_megagroup
             )
-            
+        
+        try:
+            return await self.error_handler.with_retry(
+                _extract_impl,
+                operation_name="group_info_extraction",
+                max_retries=2
+            )
+        except (ChannelPrivateError, ChatAdminRequiredError):
+            # Re-raise permission errors without retry
+            raise
         except Exception as e:
             logger.error(f"Error extracting group info: {e}")
+            default_health_monitor.record_failure("group_info_extraction", e)
             return None
             
     async def _display_group_info(self, groups: List[TelegramGroup]):
@@ -322,13 +371,17 @@ class GroupScanner:
                 
         logger.debug(f"Message processing worker {worker_name} stopped")
         
+    @handle_message_processing_errors
     async def handle_new_message(self, message, client):
-        """Process incoming messages."""
+        """Process incoming messages with comprehensive error handling."""
         try:
             if not self.message_processor:
                 logger.warning("No message processor available")
                 return
                 
+            # Apply rate limiting
+            await default_rate_limiter.acquire()
+            
             # Process the message
             processed_message = await self.message_processor.process_message(message, client)
             if not processed_message:
@@ -346,11 +399,19 @@ class GroupScanner:
                 # Store the message if storage manager is available
                 if hasattr(self.message_processor, 'storage_manager') and self.message_processor.storage_manager:
                     await self.message_processor.storage_manager.store_message(processed_message)
+                    
+                default_health_monitor.record_success("message_processing")
             else:
                 logger.debug(f"Message {processed_message.id} not relevant, skipping storage")
                 
+        except SessionExpiredError as e:
+            logger.error(f"Session expired while processing message {message.id}: {e}")
+            # Stop monitoring if session expired
+            await self.stop_monitoring()
+            raise
         except Exception as e:
             logger.error(f"Error handling new message {message.id}: {e}")
+            default_health_monitor.record_failure("message_processing", e)
             # Continue processing - don't let one message failure stop monitoring
             
     def is_monitoring(self) -> bool:

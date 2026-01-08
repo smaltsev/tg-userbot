@@ -12,6 +12,12 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional, Set
 from .config import ScannerConfig
 from .models import TelegramMessage
+from .error_handling import (
+    ErrorHandler,
+    handle_storage_errors,
+    default_error_handler,
+    default_health_monitor
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,51 +32,82 @@ class StorageManager:
         self.duplicate_hashes: Set[str] = set()
         self._data: List[Dict[str, Any]] = []
         self._lock = asyncio.Lock()
+        self.error_handler = ErrorHandler(max_retries=3)
         
+    @handle_storage_errors
     async def initialize(self):
-        """Initialize storage by loading existing data."""
-        async with self._lock:
-            if self.storage_file.exists():
-                try:
-                    with open(self.storage_file, 'r', encoding='utf-8') as f:
-                        self._data = json.load(f)
-                    
-                    # Rebuild duplicate hash set
-                    for item in self._data:
-                        content_hash = self._generate_content_hash(item)
-                        self.duplicate_hashes.add(content_hash)
+        """Initialize storage by loading existing data with error handling."""
+        async def _initialize_impl():
+            async with self._lock:
+                if self.storage_file.exists():
+                    try:
+                        with open(self.storage_file, 'r', encoding='utf-8') as f:
+                            self._data = json.load(f)
                         
-                    logger.info(f"Loaded {len(self._data)} existing messages")
-                except (json.JSONDecodeError, IOError) as e:
-                    logger.error(f"Failed to load existing data: {e}")
-                    self._data = []
-            else:
-                logger.info("No existing data file found, starting fresh")
+                        # Rebuild duplicate hash set
+                        for item in self._data:
+                            content_hash = self._generate_content_hash(item)
+                            self.duplicate_hashes.add(content_hash)
+                            
+                        logger.info(f"Loaded {len(self._data)} existing messages")
+                    except (json.JSONDecodeError, IOError) as e:
+                        logger.error(f"Failed to load existing data: {e}")
+                        self._data = []
+                        raise
+                else:
+                    logger.info("No existing data file found, starting fresh")
         
+        try:
+            await self.error_handler.with_retry(
+                _initialize_impl,
+                operation_name="storage_initialization"
+            )
+            default_health_monitor.record_success("storage_initialization")
+        except Exception as e:
+            logger.error(f"Storage initialization failed: {e}")
+            default_health_monitor.record_failure("storage_initialization", e)
+            # Continue with empty data rather than failing completely
+            self._data = []
+            self.duplicate_hashes.clear()
+        
+    @handle_storage_errors
     async def store_message(self, message_data: Dict[str, Any]) -> bool:
-        """Save relevant messages with duplicate detection."""
-        async with self._lock:
-            # Check for duplicates first
-            if await self._is_duplicate(message_data):
-                logger.debug(f"Duplicate message detected, skipping: {message_data.get('id')}")
-                return False
-            
-            # Add timestamp if not present
-            if 'stored_at' not in message_data:
-                message_data['stored_at'] = datetime.now().isoformat()
-            
-            # Store the message
-            self._data.append(message_data)
-            
-            # Add to duplicate detection
-            content_hash = self._generate_content_hash(message_data)
-            self.duplicate_hashes.add(content_hash)
-            
-            # Persist to file with exponential backoff
-            await self._persist_with_retry()
-            
-            logger.info(f"Stored message {message_data.get('id')} from group {message_data.get('group_name')}")
-            return True
+        """Save relevant messages with duplicate detection and error handling."""
+        async def _store_impl():
+            async with self._lock:
+                # Check for duplicates first
+                if await self._is_duplicate(message_data):
+                    logger.debug(f"Duplicate message detected, skipping: {message_data.get('id')}")
+                    return False
+                
+                # Add timestamp if not present
+                if 'stored_at' not in message_data:
+                    message_data['stored_at'] = datetime.now().isoformat()
+                
+                # Store the message
+                self._data.append(message_data)
+                
+                # Add to duplicate detection
+                content_hash = self._generate_content_hash(message_data)
+                self.duplicate_hashes.add(content_hash)
+                
+                # Persist to file with exponential backoff
+                await self._persist_with_retry()
+                
+                logger.info(f"Stored message {message_data.get('id')} from group {message_data.get('group_name')}")
+                return True
+        
+        try:
+            result = await self.error_handler.with_retry(
+                _store_impl,
+                operation_name="message_storage"
+            )
+            default_health_monitor.record_success("message_storage")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to store message: {e}")
+            default_health_monitor.record_failure("message_storage", e)
+            return False
         
     async def check_duplicate(self, message_data: Dict[str, Any]) -> bool:
         """Check if message is a duplicate."""

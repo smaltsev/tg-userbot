@@ -16,6 +16,13 @@ from telethon.tl.types import (
 from .config import ScannerConfig
 from .storage import StorageManager
 from .models import TelegramMessage
+from .error_handling import (
+    ErrorHandler,
+    handle_message_processing_errors,
+    default_error_handler,
+    default_rate_limiter,
+    default_health_monitor
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +34,12 @@ class MessageProcessor:
         """Initialize message processor with dependencies."""
         self.config = config
         self.storage_manager = storage_manager
+        self.error_handler = ErrorHandler(max_retries=2)
         
+    @handle_message_processing_errors
     async def process_message(self, message, client) -> Optional[TelegramMessage]:
-        """Main message processing pipeline."""
-        try:
+        """Main message processing pipeline with error handling."""
+        async def _process_impl():
             # Extract metadata first
             metadata = await self.extract_metadata(message)
             if not metadata:
@@ -62,9 +71,17 @@ class MessageProcessor:
             
             logger.debug(f"Processed message {message.id} from {metadata['group_name']}")
             return telegram_message
-            
+        
+        try:
+            result = await self.error_handler.with_retry(
+                _process_impl,
+                operation_name="message_processing"
+            )
+            default_health_monitor.record_success("message_processing")
+            return result
         except Exception as e:
             logger.error(f"Error processing message {message.id}: {e}")
+            default_health_monitor.record_failure("message_processing", e)
             return None
         
     async def extract_text(self, message) -> Optional[str]:
@@ -116,11 +133,15 @@ class MessageProcessor:
             logger.error(f"Error extracting metadata: {e}")
             return None
         
+    @handle_message_processing_errors
     async def handle_media(self, message, client) -> Optional[str]:
-        """Process images with OCR if needed."""
-        try:
+        """Process images with OCR if needed with error handling."""
+        async def _handle_media_impl():
             if not message.media:
                 return None
+                
+            # Apply rate limiting for media downloads
+            await default_rate_limiter.acquire()
                 
             # Handle photo messages
             if isinstance(message.media, MessageMediaPhoto):
@@ -137,9 +158,16 @@ class MessageProcessor:
                     return f"Document: {filename}" if filename else "Document"
             
             return None
-            
+        
+        try:
+            return await self.error_handler.with_retry(
+                _handle_media_impl,
+                operation_name="media_processing",
+                max_retries=2
+            )
         except Exception as e:
             logger.error(f"Error handling media: {e}")
+            default_health_monitor.record_failure("media_processing", e)
             return None
     
     async def _extract_text_from_photo(self, message, client) -> Optional[str]:
@@ -212,8 +240,8 @@ class MessageProcessor:
             return None
     
     async def process_message_history(self, client, entity, limit: int = 100) -> List[TelegramMessage]:
-        """Handle message history pagination."""
-        try:
+        """Handle message history pagination with error handling."""
+        async def _process_history_impl():
             messages = []
             processed_count = 0
             
@@ -221,6 +249,9 @@ class MessageProcessor:
                 if processed_count >= limit:
                     break
                     
+                # Apply rate limiting
+                await default_rate_limiter.acquire()
+                
                 processed_message = await self.process_message(message, client)
                 if processed_message:
                     messages.append(processed_message)
@@ -233,7 +264,15 @@ class MessageProcessor:
             
             logger.info(f"Processed {len(messages)} messages from history")
             return messages
-            
+        
+        try:
+            result = await self.error_handler.with_retry(
+                _process_history_impl,
+                operation_name="message_history_processing"
+            )
+            default_health_monitor.record_success("message_history_processing")
+            return result
         except Exception as e:
             logger.error(f"Error processing message history: {e}")
+            default_health_monitor.record_failure("message_history_processing", e)
             return []
