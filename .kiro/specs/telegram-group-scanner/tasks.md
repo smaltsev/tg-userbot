@@ -110,22 +110,22 @@ This implementation plan breaks down the Telegram Group Scanner into discrete co
     - Test AND/OR logic combinations
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5_
 
-- [ ] 8. Implement data storage and export system
-  - [ ] 8.1 Create Storage Manager class
+- [x] 8. Implement data storage and export system
+  - [x] 8.1 Create Storage Manager class
     - Implement JSON data serialization and persistence
     - Add duplicate detection and prevention
     - Implement export functionality for multiple formats
     - _Requirements: 5.2, 5.3, 5.5_
 
-  - [ ] 8.2 Write property test for data serialization
+  - [x] 8.2 Write property test for data serialization
     - **Property 9: Data serialization round-trip**
     - **Validates: Requirements 5.2**
 
-  - [ ] 8.3 Write property test for duplicate detection
+  - [x] 8.3 Write property test for duplicate detection
     - **Property 10: Duplicate detection accuracy**
     - **Validates: Requirements 5.3**
 
-  - [ ] 8.4 Write unit tests for storage manager
+  - [x] 8.4 Write unit tests for storage manager
     - Test JSON serialization with sample data
     - Test duplicate detection with known duplicates
     - Test export functionality
