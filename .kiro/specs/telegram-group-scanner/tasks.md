@@ -131,7 +131,7 @@ This implementation plan breaks down the Telegram Group Scanner into discrete co
     - Test export functionality
     - _Requirements: 5.2, 5.3, 5.5_
 
-- [ ] 9. Checkpoint - Core functionality complete
+- [x] 9. Checkpoint - Core functionality complete
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 10. Implement error handling and resilience
