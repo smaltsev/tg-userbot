@@ -1,0 +1,22 @@
+{
+  "api_credentials": {
+    "api_id": "your_api_id_here",
+    "api_hash": "your_api_hash_here"
+  },
+  "scanning": {
+    "scan_interval": 300,
+    "max_history_days": 14,
+    "selected_groups": []
+  },
+  "relevance": {
+    "keywords": [
+      "announcement", "official", "confirmed", "verified"
+    ],
+    "regex_patterns": [],
+    "logic": "AND"
+  },
+  "rate_limiting": {
+    "requests_per_minute": 5,
+    "flood_wait_multiplier": 3.0
+  }
+}

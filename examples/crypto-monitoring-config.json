@@ -1,0 +1,29 @@
+{
+  "api_credentials": {
+    "api_id": "your_api_id_here",
+    "api_hash": "your_api_hash_here"
+  },
+  "scanning": {
+    "scan_interval": 15,
+    "max_history_days": 3,
+    "selected_groups": ["CryptoNews", "BitcoinTrading", "AltcoinSignals"]
+  },
+  "relevance": {
+    "keywords": [
+      "bitcoin", "btc", "ethereum", "eth", "altcoin",
+      "pump", "dump", "moon", "crash", "bull", "bear",
+      "breaking", "news", "alert", "signal"
+    ],
+    "regex_patterns": [
+      "\\$[0-9,]+",
+      "\\b\\d+%\\b",
+      "\\b[A-Z]{3,5}/[A-Z]{3,5}\\b",
+      "\\b(BTC|ETH|ADA|DOT|LINK|UNI)\\b"
+    ],
+    "logic": "OR"
+  },
+  "rate_limiting": {
+    "requests_per_minute": 15,
+    "flood_wait_multiplier": 2.0
+  }
+}

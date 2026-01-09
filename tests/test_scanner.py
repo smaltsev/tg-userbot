@@ -222,8 +222,8 @@ class TestGroupScanner:
         with pytest.raises(ValueError) as exc_info:
             await scanner.discover_groups()
         
-        assert "Rate limited" in str(exc_info.value)
-        assert "30 seconds" in str(exc_info.value)
+        assert "Group discovery failed" in str(exc_info.value)
+        assert "failed after" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_get_discovered_groups(self, sample_config, mock_auth_manager):

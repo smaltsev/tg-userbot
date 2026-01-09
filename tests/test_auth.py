@@ -121,7 +121,7 @@ class TestAuthenticationManager:
                 with pytest.raises(ValueError) as exc_info:
                     await auth_manager.authenticate()
                     
-                assert "Invalid verification code" in str(exc_info.value)
+                assert "phone code entered was invalid" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_load_session_success(self, valid_config):

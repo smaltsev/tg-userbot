@@ -1,0 +1,26 @@
+{
+  "api_credentials": {
+    "api_id": "your_api_id_here",
+    "api_hash": "your_api_hash_here"
+  },
+  "scanning": {
+    "scan_interval": 5,
+    "max_history_days": 1,
+    "selected_groups": []
+  },
+  "relevance": {
+    "keywords": [
+      "urgent", "immediate", "now", "asap", "emergency",
+      "critical", "important", "priority", "alert"
+    ],
+    "regex_patterns": [
+      "\\b(URGENT|BREAKING|ALERT)\\b",
+      "\\b\\d+\\s?(minutes?|hours?)\\s?ago\\b"
+    ],
+    "logic": "OR"
+  },
+  "rate_limiting": {
+    "requests_per_minute": 30,
+    "flood_wait_multiplier": 1.2
+  }
+}

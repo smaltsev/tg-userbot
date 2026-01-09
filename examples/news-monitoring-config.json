@@ -1,0 +1,30 @@
+{
+  "api_credentials": {
+    "api_id": "your_api_id_here",
+    "api_hash": "your_api_hash_here"
+  },
+  "scanning": {
+    "scan_interval": 60,
+    "max_history_days": 1,
+    "selected_groups": ["TechNews", "WorldNews", "BreakingNews"]
+  },
+  "relevance": {
+    "keywords": [
+      "breaking", "urgent", "developing", "confirmed",
+      "official", "announcement", "update", "alert",
+      "technology", "AI", "artificial intelligence",
+      "cybersecurity", "data breach", "hack"
+    ],
+    "regex_patterns": [
+      "\\b\\d{1,2}/\\d{1,2}/\\d{4}\\b",
+      "\\b\\d{1,2}:\\d{2}\\s?(AM|PM)\\b",
+      "\\b(CEO|CTO|CFO)\\b",
+      "\\$\\d+\\s?(million|billion|trillion)\\b"
+    ],
+    "logic": "OR"
+  },
+  "rate_limiting": {
+    "requests_per_minute": 10,
+    "flood_wait_multiplier": 1.5
+  }
+}

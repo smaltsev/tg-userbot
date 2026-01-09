@@ -1,0 +1,20 @@
+{
+  "api_credentials": {
+    "api_id": "your_api_id_here",
+    "api_hash": "your_api_hash_here"
+  },
+  "scanning": {
+    "scan_interval": 30,
+    "max_history_days": 7,
+    "selected_groups": []
+  },
+  "relevance": {
+    "keywords": ["important", "urgent"],
+    "regex_patterns": [],
+    "logic": "OR"
+  },
+  "rate_limiting": {
+    "requests_per_minute": 20,
+    "flood_wait_multiplier": 1.5
+  }
+}
