@@ -108,7 +108,15 @@ class CommandInterface:
                 if not hasattr(self.scanner, 'group_scanner') or not self.scanner.group_scanner._discovered_groups:
                     await self.scanner.group_scanner.discover_groups()
                 
-                # Start monitoring
+                # Scan historical messages first
+                logger.info("Scanning historical messages...")
+                history_result = await self.scanner.group_scanner.scan_history()
+                if history_result:
+                    self._messages_processed += history_result.get('total_messages', 0)
+                    self._relevant_messages_found += history_result.get('relevant_messages', 0)
+                    self._last_scan_time = datetime.now(timezone.utc)
+                
+                # Start real-time monitoring
                 await self.scanner.group_scanner.start_monitoring()
                 
                 self._state = ScannerState.RUNNING

@@ -542,7 +542,83 @@ class GroupScanner:
         """Check if real-time monitoring is active."""
         return self._monitoring
         
-    async def scan_history(self):
-        """Process historical messages."""
-        # Implementation will be added in task 5
-        pass
+    async def scan_history(self, days: int = None):
+        """
+        Process historical messages from discovered groups.
+        
+        Args:
+            days: Number of days of history to scan (uses config if not specified)
+        """
+        from datetime import datetime, timedelta, timezone
+        
+        if not await self.auth_manager.ensure_authenticated():
+            raise ValueError("Authentication required before scanning history")
+            
+        client = await self.auth_manager.get_client()
+        if not client:
+            raise ValueError("Telegram client not available")
+            
+        if not self._discovered_groups:
+            logger.warning("No groups discovered. Run discover_groups() first")
+            return
+            
+        days_to_scan = days or self.config.max_history_days
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_to_scan)
+        logger.info(f"Starting historical message scan for last {days_to_scan} days...")
+        logger.info(f"Scanning messages from {cutoff_date.strftime('%Y-%m-%d %H:%M:%S')} to now")
+        
+        total_messages = 0
+        relevant_messages = 0
+        
+        for group in self._discovered_groups:
+            try:
+                logger.info(f"Scanning history for group: {group.title}")
+                
+                # Apply rate limiting
+                await self.rate_limiter.acquire()
+                
+                # Get messages from this group
+                message_count = 0
+                async for message in client.iter_messages(group.id, limit=1000):
+                    # Check if message is within our date range
+                    if message.date and message.date.replace(tzinfo=timezone.utc) < cutoff_date:
+                        # Message is too old, stop scanning this group
+                        logger.debug(f"Reached messages older than {days_to_scan} days, stopping scan for {group.title}")
+                        break
+                    
+                    message_count += 1
+                    total_messages += 1
+                    
+                    # Apply rate limiting every 10 messages
+                    if message_count % 10 == 0:
+                        await self.rate_limiter.acquire()
+                    
+                    # Process the message
+                    if self.message_processor:
+                        processed_message = await self.message_processor.process_message(message, client)
+                        if processed_message:
+                            # Apply relevance filtering
+                            is_relevant = True
+                            if self.relevance_filter:
+                                is_relevant = await self.relevance_filter.is_relevant(processed_message)
+                            
+                            if is_relevant:
+                                relevant_messages += 1
+                                logger.info(f"Found relevant historical message in {group.title}")
+                                
+                                # Store the message
+                                if hasattr(self.message_processor, 'storage_manager') and self.message_processor.storage_manager:
+                                    await self.message_processor.storage_manager.store_message(processed_message)
+                    
+                    # Log progress every 100 messages
+                    if total_messages % 100 == 0:
+                        logger.info(f"Scanned {total_messages} messages, found {relevant_messages} relevant")
+                
+                logger.info(f"Completed scan of {group.title}: {message_count} messages")
+                
+            except Exception as e:
+                logger.error(f"Error scanning history for {group.title}: {e}")
+                continue
+        
+        logger.info(f"Historical scan complete: {total_messages} messages scanned, {relevant_messages} relevant found")
+        return {"total_messages": total_messages, "relevant_messages": relevant_messages}
