@@ -19,7 +19,6 @@ from .error_handling import (
     NetworkConnectivityError,
     MaxRetriesExceededError,
     default_error_handler,
-    default_rate_limiter,
     default_health_monitor,
     handle_message_processing_errors
 )
@@ -60,6 +59,14 @@ class GroupScanner:
         self.error_handler = ErrorHandler(max_retries=3)
         self._command_interface = None
         
+        # Create rate limiter with config values
+        from .error_handling import RateLimiter
+        self.rate_limiter = RateLimiter(
+            requests_per_minute=config.rate_limit_rpm,
+            default_delay=config.default_delay,
+            max_wait_time=config.max_wait_time
+        )
+        
     def set_command_interface(self, command_interface):
         """Set reference to command interface for statistics tracking."""
         self._command_interface = command_interface
@@ -76,7 +83,7 @@ class GroupScanner:
             NetworkConnectivityError: If network issues persist
             SessionExpiredError: If session needs re-authentication
         """
-        if not self.auth_manager.is_authenticated():
+        if not await self.auth_manager.ensure_authenticated():
             raise ValueError("Authentication required before discovering groups")
             
         client = await self.auth_manager.get_client()
@@ -88,37 +95,112 @@ class GroupScanner:
             
             logger.info("Starting group discovery...")
             
-            # Apply rate limiting
-            await default_rate_limiter.acquire()
-            
-            # Get all dialogs (conversations)
-            async for dialog in client.iter_dialogs():
-                entity = dialog.entity
+            # If we have specific groups selected, try to find them directly first
+            if self.config.selected_groups:
+                logger.info(f"Searching for {len(self.config.selected_groups)} specific groups: {self.config.selected_groups}")
                 
-                # Process channels and groups only
-                if isinstance(entity, (Channel, Chat)):
+                for group_name in self.config.selected_groups:
                     try:
-                        # Apply rate limiting for each group
-                        await default_rate_limiter.acquire()
+                        await self.rate_limiter.acquire()
                         
-                        group_info = await self._extract_group_info(entity, client)
-                        if group_info:
-                            discovered_groups.append(group_info)
-                            logger.debug(f"Discovered group: {group_info.title} (ID: {group_info.id})")
-                            
-                    except (ChannelPrivateError, ChatAdminRequiredError) as e:
-                        # Handle access restrictions gracefully
-                        logger.warning(f"Access denied to group {getattr(entity, 'title', 'Unknown')}: {e}")
-                        continue
+                        # Try to find the group by username first (if it looks like a username)
+                        if group_name.startswith('@') or not any(c in group_name for c in [' ', 'а', 'б', 'в', 'г', 'д', 'е', 'ё', 'ж', 'з', 'и', 'й', 'к', 'л', 'м', 'н', 'о', 'п', 'р', 'с', 'т', 'у', 'ф', 'х', 'ц', 'ч', 'ш', 'щ', 'ъ', 'ы', 'ь', 'э', 'ю', 'я']):
+                            try:
+                                username = group_name.lstrip('@')
+                                entity = await client.get_entity(username)
+                                if isinstance(entity, (Channel, Chat)):
+                                    group_info = await self._extract_group_info(entity, client)
+                                    if group_info:
+                                        discovered_groups.append(group_info)
+                                        logger.info(f"Found group by username: {group_info.title} (ID: {group_info.id})")
+                                        continue
+                            except Exception as e:
+                                logger.debug(f"Could not find group by username '{username}': {e}")
                         
                     except Exception as e:
-                        # Log other errors but continue processing
-                        logger.error(f"Error processing group {getattr(entity, 'title', 'Unknown')}: {e}")
-                        default_health_monitor.record_failure("group_processing", e)
+                        logger.debug(f"Error searching for group '{group_name}': {e}")
                         continue
+                
+                # If we found all groups by direct search, we're done
+                if len(discovered_groups) == len(self.config.selected_groups):
+                    logger.info(f"Found all {len(discovered_groups)} selected groups by direct search")
+                    self._discovered_groups = discovered_groups
+                    await self._display_group_info(discovered_groups)
+                    return discovered_groups
+                
+                # Otherwise, continue with dialog iteration for remaining groups
+                found_names = {group.title for group in discovered_groups}
+                remaining_groups = [name for name in self.config.selected_groups if not any(name.lower() in found_name.lower() for found_name in found_names)]
+                logger.info(f"Found {len(discovered_groups)} groups by direct search, searching dialogs for remaining: {remaining_groups}")
+            
+            # Apply rate limiting before dialog iteration
+            await self.rate_limiter.acquire()
+            
+            # Get all dialogs (conversations) with timeout and early termination
+            dialog_count = 0
+            target_group_count = len(self.config.selected_groups) if self.config.selected_groups else float('inf')
+            
+            try:
+                async for dialog in client.iter_dialogs():
+                    entity = dialog.entity
+                    dialog_count += 1
+                    
+                    # Add progress logging every 10 dialogs
+                    if dialog_count % 10 == 0:
+                        logger.info(f"Processed {dialog_count} dialogs, found {len(discovered_groups)} groups so far...")
+                    
+                    # Early termination if we found all selected groups
+                    if self.config.selected_groups and len(discovered_groups) >= target_group_count:
+                        logger.info(f"Found all {target_group_count} selected groups, stopping dialog iteration early")
+                        break
+                    
+                    # Process channels and groups only
+                    if isinstance(entity, (Channel, Chat)):
+                        try:
+                            # Apply rate limiting for each group
+                            await self.rate_limiter.acquire()
+                            
+                            group_info = await self._extract_group_info(entity, client)
+                            if group_info:
+                                # Filter by selected groups if specified
+                                if self.config.selected_groups:
+                                    # Check if group matches any selected group (by title or username)
+                                    group_matches = False
+                                    for selected in self.config.selected_groups:
+                                        if (selected.lower() in group_info.title.lower() or 
+                                            (group_info.username and selected.lower() in group_info.username.lower())):
+                                            group_matches = True
+                                            break
+                                    
+                                    if not group_matches:
+                                        logger.debug(f"Skipping group (not in selected list): {group_info.title}")
+                                        continue
+                                
+                                # Check if we already have this group (avoid duplicates)
+                                if not any(existing.id == group_info.id for existing in discovered_groups):
+                                    discovered_groups.append(group_info)
+                                    logger.info(f"Discovered group: {group_info.title} (ID: {group_info.id})")
+                                
+                        except (ChannelPrivateError, ChatAdminRequiredError) as e:
+                            # Handle access restrictions gracefully
+                            logger.warning(f"Access denied to group {getattr(entity, 'title', 'Unknown')}: {e}")
+                            continue
+                            
+                        except Exception as e:
+                            # Log other errors but continue processing
+                            logger.error(f"Error processing group {getattr(entity, 'title', 'Unknown')}: {e}")
+                            default_health_monitor.record_failure("group_processing", e)
+                            continue
+                            
+            except Exception as e:
+                logger.error(f"Error during dialog iteration: {e}")
+                if discovered_groups:
+                    logger.info(f"Partial discovery completed with {len(discovered_groups)} groups before error")
+                else:
+                    raise
                         
             self._discovered_groups = discovered_groups
-            logger.info(f"Group discovery completed. Found {len(discovered_groups)} accessible groups")
+            logger.info(f"Group discovery completed. Found {len(discovered_groups)} accessible groups from {dialog_count} total dialogs")
             
             # Display group information
             await self._display_group_info(discovered_groups)
@@ -126,12 +208,20 @@ class GroupScanner:
             return discovered_groups
         
         try:
-            result = await self.error_handler.with_retry(
-                _discover_groups_impl,
-                operation_name="group_discovery"
+            # Add timeout to prevent hanging - increase to 10 minutes for large accounts
+            result = await asyncio.wait_for(
+                self.error_handler.with_retry(
+                    _discover_groups_impl,
+                    operation_name="group_discovery"
+                ),
+                timeout=600.0  # 10 minute timeout
             )
             default_health_monitor.record_success("group_discovery")
             return result
+            
+        except asyncio.TimeoutError:
+            logger.error("Group discovery timed out after 10 minutes")
+            raise ValueError("Group discovery timed out. This may be due to rate limiting or network issues.")
             
         except SessionExpiredError as e:
             logger.error(f"Session expired during group discovery: {e}")
@@ -206,12 +296,12 @@ class GroupScanner:
             # Get member count
             member_count = 0
             try:
-                if hasattr(entity, 'participants_count'):
+                if hasattr(entity, 'participants_count') and entity.participants_count is not None:
                     member_count = entity.participants_count
                 else:
                     # For regular chats, try to get full chat info
                     full_chat = await client.get_entity(entity)
-                    if hasattr(full_chat, 'participants_count'):
+                    if hasattr(full_chat, 'participants_count') and full_chat.participants_count is not None:
                         member_count = full_chat.participants_count
             except (ChannelPrivateError, ChatAdminRequiredError):
                 # Re-raise access permission errors to be handled at higher level
@@ -259,11 +349,12 @@ class GroupScanner:
             group_type = "Channel" if group.is_channel else "Megagroup" if group.is_megagroup else "Group"
             privacy = "Private" if group.is_private else "Public"
             username_info = f"@{group.username}" if group.username else "No username"
+            member_count_info = f"{group.member_count:,}" if group.member_count is not None else "Unknown"
             
             logger.info(f"{i:2d}. {group.title}")
             logger.info(f"    Type: {group_type} ({privacy})")
             logger.info(f"    Username: {username_info}")
-            logger.info(f"    Members: {group.member_count:,}")
+            logger.info(f"    Members: {member_count_info}")
             logger.info(f"    ID: {group.id}")
             logger.info("")
             
@@ -272,7 +363,7 @@ class GroupScanner:
         
     async def start_monitoring(self):
         """Begin real-time message monitoring."""
-        if not self.auth_manager.is_authenticated():
+        if not await self.auth_manager.ensure_authenticated():
             raise ValueError("Authentication required before starting monitoring")
             
         if self._monitoring:
@@ -385,7 +476,7 @@ class GroupScanner:
                 return
                 
             # Apply rate limiting
-            await default_rate_limiter.acquire()
+            await self.rate_limiter.acquire()
             
             # Process the message
             processed_message = await self.message_processor.process_message(message, client)

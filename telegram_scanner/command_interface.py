@@ -34,7 +34,11 @@ class ScannerStatus:
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert status to dictionary."""
-        return asdict(self)
+        result = asdict(self)
+        # Convert enum to its value for JSON serialization
+        if isinstance(result.get('state'), ScannerState):
+            result['state'] = result['state'].value
+        return result
 
 
 @dataclass

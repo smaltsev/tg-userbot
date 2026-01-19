@@ -117,6 +117,14 @@ class AuthenticationManager:
             if not self.config.api_id or not self.config.api_hash:
                 logger.error("Cannot load session without API credentials")
                 return False
+            
+            # If we already have a client, disconnect it first to avoid locks
+            if self._client is not None:
+                try:
+                    await self._client.disconnect()
+                except:
+                    pass
+                self._client = None
                 
             # Create client with existing session
             self._client = TelegramClient(
@@ -139,7 +147,8 @@ class AuthenticationManager:
         try:
             return await self.error_handler.with_retry(
                 _load_session_impl,
-                operation_name="session_load"
+                operation_name="session_load",
+                max_retries=2  # Reduce retries for session load
             )
         except SessionExpiredError:
             logger.warning("Session expired, re-authentication required")
@@ -155,7 +164,21 @@ class AuthenticationManager:
             
     def is_authenticated(self) -> bool:
         """Check authentication status."""
-        return self._authenticated
+        return self._authenticated and self._client is not None
+        
+    async def ensure_authenticated(self) -> bool:
+        """Ensure we have a valid authenticated session."""
+        # Check if already authenticated
+        if self._authenticated and self._client is not None:
+            logger.debug("Already authenticated, skipping session load")
+            return True
+            
+        # Try to load existing session
+        if await self.load_session():
+            return True
+            
+        # If no valid session, try full authentication
+        return await self.authenticate()
         
     async def get_client(self) -> Optional[TelegramClient]:
         """Get the authenticated Telethon client."""

@@ -30,11 +30,12 @@ logger = logging.getLogger(__name__)
 class MessageProcessor:
     """Extracts and processes message content."""
     
-    def __init__(self, config: ScannerConfig, storage_manager: StorageManager):
+    def __init__(self, config: ScannerConfig, storage_manager: StorageManager, rate_limiter=None):
         """Initialize message processor with dependencies."""
         self.config = config
         self.storage_manager = storage_manager
         self.error_handler = ErrorHandler(max_retries=2)
+        self.rate_limiter = rate_limiter or default_rate_limiter
         
     @handle_message_processing_errors
     async def process_message(self, message, client) -> Optional[TelegramMessage]:
@@ -141,7 +142,7 @@ class MessageProcessor:
                 return None
                 
             # Apply rate limiting for media downloads
-            await default_rate_limiter.acquire()
+            await self.rate_limiter.acquire()
                 
             # Handle photo messages
             if isinstance(message.media, MessageMediaPhoto):
@@ -250,7 +251,7 @@ class MessageProcessor:
                     break
                     
                 # Apply rate limiting
-                await default_rate_limiter.acquire()
+                await self.rate_limiter.acquire()
                 
                 processed_message = await self.process_message(message, client)
                 if processed_message:

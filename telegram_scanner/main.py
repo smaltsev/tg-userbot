@@ -48,13 +48,25 @@ class TelegramScanner:
             self.auth_manager = AuthenticationManager(config)
             self.storage_manager = StorageManager(config)
             self.relevance_filter = RelevanceFilter(config)
-            self.message_processor = MessageProcessor(config, self.storage_manager)
+            
+            # Create rate limiter with config values
+            from .error_handling import RateLimiter
+            rate_limiter = RateLimiter(
+                requests_per_minute=config.rate_limit_rpm,
+                default_delay=config.default_delay,
+                max_wait_time=config.max_wait_time
+            )
+            
+            self.message_processor = MessageProcessor(config, self.storage_manager, rate_limiter)
             self.group_scanner = GroupScanner(
                 config, 
                 self.auth_manager, 
                 self.message_processor, 
                 self.relevance_filter
             )
+            
+            # Set the same rate limiter in the scanner
+            self.group_scanner.rate_limiter = rate_limiter
             
             # Initialize command interface
             self.command_interface = CommandInterface(self)
@@ -179,6 +191,41 @@ class TelegramScanner:
                 
         await self.shutdown()
         
+    async def run_discovery_test(self):
+        """Run group discovery test only."""
+        await self.initialize()
+        
+        logger.info("Starting group discovery test")
+        
+        try:
+            # Ensure authentication (will try session first, then full auth if needed)
+            authenticated = await self.auth_manager.ensure_authenticated()
+            if not authenticated:
+                logger.error("Authentication failed")
+                return False
+                
+            # Discover and display groups
+            import time
+            start_time = time.time()
+            groups = await self.group_scanner.discover_groups()
+            end_time = time.time()
+            
+            duration = end_time - start_time
+            logger.info(f"Discovery completed in {duration:.1f} seconds")
+            logger.info(f"Discovered {len(groups)} accessible groups")
+            
+            return True
+                
+        except KeyboardInterrupt:
+            logger.info("Discovery test interrupted by user")
+        except Exception as e:
+            logger.error(f"Error in discovery test: {e}")
+            return False
+        finally:
+            await self.shutdown()
+            
+        return True
+        
     async def run_batch(self, duration_minutes: Optional[int] = None):
         """Run the application in batch mode for a specified duration."""
         await self.initialize()
@@ -186,8 +233,8 @@ class TelegramScanner:
         logger.info("Starting Telegram Scanner in batch mode")
         
         try:
-            # Authenticate user
-            authenticated = await self.auth_manager.authenticate()
+            # Ensure authentication (will try session first, then full auth if needed)
+            authenticated = await self.auth_manager.ensure_authenticated()
             if not authenticated:
                 logger.error("Authentication failed")
                 return False
@@ -285,6 +332,12 @@ Examples:
     )
     
     parser.add_argument(
+        '--test-discovery', '-t',
+        action='store_true',
+        help='Test group discovery only (no monitoring)'
+    )
+    
+    parser.add_argument(
         '--duration', '-d',
         type=int,
         help='Duration in minutes for batch mode (default: run indefinitely)'
@@ -329,7 +382,11 @@ async def main():
     scanner = TelegramScanner(str(config_path))
     
     try:
-        if args.batch:
+        if args.test_discovery:
+            logger.info("Starting discovery test mode")
+            success = await scanner.run_discovery_test()
+            sys.exit(0 if success else 1)
+        elif args.batch:
             logger.info("Starting in batch mode")
             success = await scanner.run_batch(args.duration)
             sys.exit(0 if success else 1)

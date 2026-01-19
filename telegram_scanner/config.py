@@ -23,6 +23,8 @@ class ScannerConfig:
     regex_patterns: List[str] = None
     logic_operator: str = "OR"
     rate_limit_rpm: int = 20
+    default_delay: float = 1.0
+    max_wait_time: float = 60.0
     
     def __post_init__(self):
         """Initialize default values for mutable fields."""
@@ -105,7 +107,9 @@ class ConfigManager:
             },
             "rate_limiting": {
                 "requests_per_minute": 20,
-                "flood_wait_multiplier": 1.5
+                "flood_wait_multiplier": 1.5,
+                "default_delay": 1.0,
+                "max_wait_time": 60.0
             }
         }
         
@@ -147,6 +151,8 @@ class ConfigManager:
         # Rate limiting
         rate_limiting = config_data.get("rate_limiting", {})
         flattened["rate_limit_rpm"] = rate_limiting.get("requests_per_minute", 20)
+        flattened["default_delay"] = rate_limiting.get("default_delay", 1.0)
+        flattened["max_wait_time"] = rate_limiting.get("max_wait_time", 60.0)
         
         return flattened
         
@@ -169,6 +175,8 @@ class ConfigManager:
             },
             "rate_limiting": {
                 "requests_per_minute": config_dict["rate_limit_rpm"],
-                "flood_wait_multiplier": 1.5
+                "flood_wait_multiplier": 1.5,
+                "default_delay": config_dict.get("default_delay", 1.0),
+                "max_wait_time": config_dict.get("max_wait_time", 60.0)
             }
         }

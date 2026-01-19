@@ -218,38 +218,53 @@ class ErrorHandler:
 class RateLimiter:
     """Rate limiting to prevent API abuse."""
     
-    def __init__(self, requests_per_minute: int = 20):
+    def __init__(self, requests_per_minute: int = 20, default_delay: float = 1.0, max_wait_time: float = 60.0):
         """Initialize rate limiter."""
         self.requests_per_minute = requests_per_minute
+        self.default_delay = default_delay
+        self.max_wait_time = max_wait_time
         self.request_times = []
-        self._lock = asyncio.Lock()
+        self._last_request_time = 0
     
     async def acquire(self):
         """Acquire permission to make a request."""
-        async with self._lock:
-            now = time.time()
+        now = time.time()
+        
+        # Remove requests older than 1 minute
+        cutoff = now - 60
+        self.request_times = [t for t in self.request_times if t > cutoff]
+        
+        # Check if we're at the limit
+        if len(self.request_times) >= self.requests_per_minute:
+            # Calculate how long to wait
+            oldest_request = min(self.request_times)
+            wait_time = 60 - (now - oldest_request)
             
-            # Remove requests older than 1 minute
-            cutoff = now - 60
-            self.request_times = [t for t in self.request_times if t > cutoff]
+            # Cap the wait time to max_wait_time
+            if wait_time > self.max_wait_time:
+                wait_time = self.max_wait_time
+                logger.warning(f"Rate limit wait time capped at {self.max_wait_time:.1f} seconds")
             
-            # Check if we're at the limit
-            if len(self.request_times) >= self.requests_per_minute:
-                # Calculate how long to wait
-                oldest_request = min(self.request_times)
-                wait_time = 60 - (now - oldest_request)
+            if wait_time > 0:
+                logger.info(f"Rate limit reached. Waiting {wait_time:.1f} seconds")
+                await asyncio.sleep(wait_time)
                 
-                if wait_time > 0:
-                    logger.info(f"Rate limit reached. Waiting {wait_time:.1f} seconds")
-                    await asyncio.sleep(wait_time)
-                    
-                    # Clean up again after waiting
-                    now = time.time()
-                    cutoff = now - 60
-                    self.request_times = [t for t in self.request_times if t > cutoff]
-            
-            # Record this request
-            self.request_times.append(now)
+                # Clean up again after waiting
+                now = time.time()
+                cutoff = now - 60
+                self.request_times = [t for t in self.request_times if t > cutoff]
+        else:
+            # Apply default delay only if we're not rate limited
+            time_since_last = now - self._last_request_time
+            if time_since_last < self.default_delay:
+                wait_time = self.default_delay - time_since_last
+                logger.debug(f"Default delay: waiting {wait_time:.1f} seconds")
+                await asyncio.sleep(wait_time)
+                now = time.time()
+        
+        # Record this request
+        self.request_times.append(now)
+        self._last_request_time = now
 
 
 def handle_message_processing_errors(func):
@@ -326,5 +341,5 @@ class HealthMonitor:
 
 # Global instances for easy access
 default_error_handler = ErrorHandler()
-default_rate_limiter = RateLimiter()
+default_rate_limiter = RateLimiter(requests_per_minute=60, default_delay=1.0, max_wait_time=1.0)
 default_health_monitor = HealthMonitor()
