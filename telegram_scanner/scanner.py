@@ -133,32 +133,34 @@ class GroupScanner:
                 remaining_groups = [name for name in self.config.selected_groups if not any(name.lower() in found_name.lower() for found_name in found_names)]
                 logger.info(f"Found {len(discovered_groups)} groups by direct search, searching dialogs for remaining: {remaining_groups}")
             
-            # Apply rate limiting before dialog iteration
+            # Apply rate limiting before dialog iteration (lighter for just listing)
             await self.rate_limiter.acquire()
             
             # Get all dialogs (conversations) with timeout and early termination
             dialog_count = 0
             target_group_count = len(self.config.selected_groups) if self.config.selected_groups else float('inf')
+            selected_groups_found = set()  # Track which selected groups we've found
             
             try:
                 async for dialog in client.iter_dialogs():
                     entity = dialog.entity
                     dialog_count += 1
                     
-                    # Add progress logging every 10 dialogs
-                    if dialog_count % 10 == 0:
+                    # Add progress logging every 50 dialogs for large accounts
+                    if dialog_count % 50 == 0:
                         logger.info(f"Processed {dialog_count} dialogs, found {len(discovered_groups)} groups so far...")
                     
                     # Early termination if we found all selected groups
-                    if self.config.selected_groups and len(discovered_groups) >= target_group_count:
+                    if self.config.selected_groups and len(selected_groups_found) >= target_group_count:
                         logger.info(f"Found all {target_group_count} selected groups, stopping dialog iteration early")
                         break
                     
                     # Process channels and groups only
                     if isinstance(entity, (Channel, Chat)):
                         try:
-                            # Apply rate limiting for each group
-                            await self.rate_limiter.acquire()
+                            # Only apply rate limiting every 10 groups to speed up discovery
+                            if len(discovered_groups) % 10 == 0:
+                                await self.rate_limiter.acquire()
                             
                             group_info = await self._extract_group_info(entity, client)
                             if group_info:
@@ -166,15 +168,21 @@ class GroupScanner:
                                 if self.config.selected_groups:
                                     # Check if group matches any selected group (by title or username)
                                     group_matches = False
+                                    matched_name = None
                                     for selected in self.config.selected_groups:
                                         if (selected.lower() in group_info.title.lower() or 
                                             (group_info.username and selected.lower() in group_info.username.lower())):
                                             group_matches = True
+                                            matched_name = selected
                                             break
                                     
                                     if not group_matches:
                                         logger.debug(f"Skipping group (not in selected list): {group_info.title}")
                                         continue
+                                    
+                                    # Track that we found this selected group
+                                    if matched_name:
+                                        selected_groups_found.add(matched_name)
                                 
                                 # Check if we already have this group (avoid duplicates)
                                 if not any(existing.id == group_info.id for existing in discovered_groups):
@@ -208,20 +216,27 @@ class GroupScanner:
             return discovered_groups
         
         try:
-            # Add timeout to prevent hanging - increase to 10 minutes for large accounts
+            # Add timeout to prevent hanging - increase for large accounts
+            # For 610 dialogs with rate limiting, we need more time
+            timeout_seconds = 1800.0  # 30 minutes for large accounts
+            
             result = await asyncio.wait_for(
                 self.error_handler.with_retry(
                     _discover_groups_impl,
                     operation_name="group_discovery"
                 ),
-                timeout=600.0  # 10 minute timeout
+                timeout=timeout_seconds
             )
             default_health_monitor.record_success("group_discovery")
             return result
             
         except asyncio.TimeoutError:
-            logger.error("Group discovery timed out after 10 minutes")
-            raise ValueError("Group discovery timed out. This may be due to rate limiting or network issues.")
+            logger.error(f"Group discovery timed out after {timeout_seconds/60:.0f} minutes")
+            # Return partial results if we have any
+            if self._discovered_groups:
+                logger.warning(f"Returning {len(self._discovered_groups)} groups discovered before timeout")
+                return self._discovered_groups
+            raise ValueError(f"Group discovery timed out after {timeout_seconds/60:.0f} minutes. This may be due to rate limiting or network issues.")
             
         except SessionExpiredError as e:
             logger.error(f"Session expired during group discovery: {e}")
