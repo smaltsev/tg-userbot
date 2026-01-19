@@ -143,12 +143,12 @@ class TelegramScanner:
                 elif command == "status":
                     status = await self.command_interface.get_status()
                     print(f"\nStatus:")
-                    print(json.dumps(status.to_dict(), indent=2))
+                    print(json.dumps(status.to_dict(), indent=2, ensure_ascii=False))
                     
                 elif command == "report":
                     report = await self.command_interface.generate_report()
                     print(f"\nReport:")
-                    print(json.dumps(report.to_dict(), indent=2))
+                    print(json.dumps(report.to_dict(), indent=2, ensure_ascii=False))
                     
                 elif command == "config":
                     config = self.config_manager.get_config()
@@ -164,7 +164,7 @@ class TelegramScanner:
                             "rate_limit_rpm": config.rate_limit_rpm
                         }
                         print(f"\nConfiguration:")
-                        print(json.dumps(config_dict, indent=2))
+                        print(json.dumps(config_dict, indent=2, ensure_ascii=False))
                     else:
                         print("Configuration not loaded")
                         
