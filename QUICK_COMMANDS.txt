@@ -1,0 +1,100 @@
+╔══════════════════════════════════════════════════════════════╗
+║     TELEGRAM GROUP SCANNER - QUICK COMMAND REFERENCE         ║
+╚══════════════════════════════════════════════════════════════╝
+
+INTERACTIVE MODE COMMANDS:
+─────────────────────────────────────────────────────────────────
+
+  start      Start scanning groups
+  stop       Stop scanning
+  pause      Pause monitoring
+  resume     Resume monitoring
+  status     Show current status
+  report     Generate scanning report
+  list       List discovered groups
+  config     Show configuration
+  reload     Reload configuration
+  help       Show detailed help
+  quit       Exit application (also: exit, q)
+
+COMMAND LINE OPTIONS:
+─────────────────────────────────────────────────────────────────
+
+  python -m telegram_scanner.main
+    → Start in interactive mode
+
+  python -m telegram_scanner.main --batch
+    → Run in batch mode (non-interactive)
+
+  python -m telegram_scanner.main --batch --duration 60
+    → Run for 60 minutes
+
+  python -m telegram_scanner.main --test-discovery
+    → Test group discovery only
+
+  python -m telegram_scanner.main --config custom.json
+    → Use custom config file
+
+  python -m telegram_scanner.main --log-level DEBUG
+    → Set log level (DEBUG/INFO/WARNING/ERROR)
+
+  python -m telegram_scanner.main --log-file scanner.log
+    → Save logs to file
+
+QUICK START:
+─────────────────────────────────────────────────────────────────
+
+  1. python -m telegram_scanner.main
+  2. Type: start
+  3. Type: status (to check progress)
+  4. Type: list (to see groups)
+  5. Type: report (to see results)
+  6. Type: quit (when done)
+
+UTILITIES:
+─────────────────────────────────────────────────────────────────
+
+  python fix_session_lock.py
+    → Fix database lock issues
+
+  python setup_auth.py
+    → Setup authentication
+
+  python mock_scanner.py
+    → Run mock demonstration
+
+CONFIGURATION:
+─────────────────────────────────────────────────────────────────
+
+  Edit config.json to change:
+    • selected_groups - Groups to monitor
+    • keywords - Keywords to search for
+    • scan_interval - Scan frequency
+    • rate_limiting - API limits
+
+  After editing, use 'reload' command in interactive mode
+
+TROUBLESHOOTING:
+─────────────────────────────────────────────────────────────────
+
+  Database locked:
+    → python fix_session_lock.py
+
+  Authentication failed:
+    → del telegram_scanner.session
+    → Run scanner again
+
+  Rate limiting:
+    → Increase default_delay in config.json
+    → Decrease requests_per_minute
+
+MORE INFO:
+─────────────────────────────────────────────────────────────────
+
+  COMMANDS.md              - Full command reference
+  README.md                - General overview
+  QUICK_START.md           - Quick start guide
+  API_CREDENTIALS_GUIDE.md - Get API credentials
+  SETUP_GUIDE.md           - Detailed setup
+
+╚══════════════════════════════════════════════════════════════╝

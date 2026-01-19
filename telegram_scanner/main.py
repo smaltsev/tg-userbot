@@ -113,8 +113,10 @@ class TelegramScanner:
         print("  resume  - Resume scanning")
         print("  status  - Show current status")
         print("  report  - Generate scanning report")
+        print("  list    - List discovered groups")
         print("  config  - Show current configuration")
         print("  reload  - Reload configuration")
+        print("  help    - Show this help message")
         print("  quit    - Exit application")
         print("=" * 60)
         
@@ -172,12 +174,99 @@ class TelegramScanner:
                         print("Configuration reloaded successfully")
                     except Exception as e:
                         print(f"Error reloading configuration: {e}")
+                
+                elif command == "list":
+                    # List discovered groups
+                    if self.group_scanner and self.group_scanner._discovered_groups:
+                        groups = self.group_scanner._discovered_groups
+                        print(f"\n{'='*60}")
+                        print(f"DISCOVERED GROUPS ({len(groups)} total)")
+                        print(f"{'='*60}")
+                        
+                        for i, group in enumerate(groups, 1):
+                            group_type = "Channel" if group.is_channel else "Megagroup" if group.is_megagroup else "Group"
+                            privacy = "Private" if group.is_private else "Public"
+                            username_info = f"@{group.username}" if group.username else "No username"
+                            member_count_info = f"{group.member_count:,}" if group.member_count is not None else "Unknown"
+                            
+                            print(f"{i:2d}. {group.title}")
+                            print(f"    Type: {group_type} ({privacy})")
+                            print(f"    Username: {username_info}")
+                            print(f"    Members: {member_count_info}")
+                            print(f"    ID: {group.id}")
+                            print("")
+                        
+                        print(f"{'='*60}")
+                    else:
+                        print("No groups discovered yet. Run 'start' command first.")
+                
+                elif command == "help":
+                    # Show detailed help
+                    print(f"\n{'='*60}")
+                    print("TELEGRAM GROUP SCANNER - COMMAND HELP")
+                    print(f"{'='*60}")
+                    print("\nCOMMANDS:")
+                    print("\n  start")
+                    print("    Start scanning the configured Telegram groups.")
+                    print("    This will discover groups and begin monitoring for")
+                    print("    messages matching your keywords.")
+                    print("\n  stop")
+                    print("    Stop the scanner and end monitoring.")
+                    print("\n  pause")
+                    print("    Temporarily pause monitoring without stopping.")
+                    print("    Use 'resume' to continue.")
+                    print("\n  resume")
+                    print("    Resume monitoring after pausing.")
+                    print("\n  status")
+                    print("    Display current scanner status including:")
+                    print("    - Current state (running/stopped/paused)")
+                    print("    - Groups being monitored")
+                    print("    - Messages found")
+                    print("    - Statistics")
+                    print("\n  report")
+                    print("    Generate a detailed scanning report with:")
+                    print("    - Summary of activity")
+                    print("    - Relevant messages found")
+                    print("    - Group statistics")
+                    print("\n  list")
+                    print("    List all discovered Telegram groups with details:")
+                    print("    - Group name and type")
+                    print("    - Member count")
+                    print("    - Username (if public)")
+                    print("    - Group ID")
+                    print("\n  config")
+                    print("    Show current configuration settings:")
+                    print("    - Selected groups to monitor")
+                    print("    - Keywords to search for")
+                    print("    - Scan interval and other settings")
+                    print("\n  reload")
+                    print("    Reload configuration from config.json file.")
+                    print("    Useful after making changes to the config.")
+                    print("\n  help")
+                    print("    Show this help message.")
+                    print("\n  quit (or exit, q)")
+                    print("    Exit the application.")
+                    print(f"\n{'='*60}")
+                    print("\nCONFIGURATION:")
+                    print("  Edit config.json to change:")
+                    print("  - selected_groups: Groups to monitor")
+                    print("  - keywords: Keywords to search for")
+                    print("  - scan_interval: How often to check for messages")
+                    print("  - rate_limiting: API rate limit settings")
+                    print(f"\n{'='*60}")
+                    print("\nEXAMPLE WORKFLOW:")
+                    print("  1. Type 'start' to begin scanning")
+                    print("  2. Type 'status' to check progress")
+                    print("  3. Type 'list' to see discovered groups")
+                    print("  4. Type 'report' to see found messages")
+                    print("  5. Type 'stop' when done")
+                    print(f"{'='*60}\n")
                     
                 elif command in ["quit", "exit", "q"]:
                     break
                     
                 else:
-                    print("Unknown command. Type 'quit' to exit or use one of the available commands.")
+                    print("Unknown command. Type 'help' for available commands.")
                     
             except KeyboardInterrupt:
                 print("\nShutdown requested by user")
