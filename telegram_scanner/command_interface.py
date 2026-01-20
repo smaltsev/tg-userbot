@@ -104,9 +104,22 @@ class CommandInterface:
                 if not self.scanner.auth_manager.is_authenticated():
                     await self.scanner.auth_manager.authenticate()
                 
-                # Discover groups if not already done
-                if not hasattr(self.scanner, 'group_scanner') or not self.scanner.group_scanner._discovered_groups:
-                    await self.scanner.group_scanner.discover_groups()
+                # Try to load cached groups first
+                if not self.scanner.group_scanner._discovered_groups:
+                    logger.info("Attempting to load cached groups...")
+                    loaded = await self.scanner.group_scanner.load_discovered_groups()
+                    
+                    if loaded:
+                        logger.info(f"Loaded {len(self.scanner.group_scanner._discovered_groups)} groups from cache")
+                        print(f"\n✓ Loaded {len(self.scanner.group_scanner._discovered_groups)} groups from cache")
+                        print(f"  Use 'scan' command to re-discover groups\n")
+                    else:
+                        # No cache, need to discover
+                        logger.info("No cached groups found, discovering groups...")
+                        print("\nNo cached groups found. Discovering groups...")
+                        print("This may take several minutes for large accounts.")
+                        print("Groups will be cached for future use.\n")
+                        await self.scanner.group_scanner.discover_groups()
                 
                 # Scan historical messages first
                 logger.info("Scanning historical messages...")
@@ -279,6 +292,65 @@ class CommandInterface:
                 self._state = ScannerState.ERROR
                 self._last_error = error_msg
                 self._record_error("resume_command", str(e))
+                
+                return {
+                    "success": False,
+                    "message": error_msg,
+                    "state": self._state.value
+                }
+    
+    async def scan_groups(self) -> Dict[str, Any]:
+        """
+        Force re-discovery of groups (clears cache and scans from beginning).
+        
+        Returns:
+            Dict containing operation result and status
+        """
+        async with self._command_lock:
+            # Can only scan when stopped
+            if self._state != ScannerState.STOPPED:
+                return {
+                    "success": False,
+                    "message": f"Cannot scan groups while scanner is {self._state.value}. Stop scanner first.",
+                    "state": self._state.value
+                }
+                
+            try:
+                logger.info("Starting group discovery via scan command...")
+                print("\nScanning for groups...")
+                print("This will clear cached groups and discover from scratch.")
+                print("This may take several minutes for large accounts.\n")
+                
+                # Initialize scanner if needed
+                if not hasattr(self.scanner, 'auth_manager') or not self.scanner.auth_manager:
+                    await self.scanner.initialize()
+                
+                # Authenticate if not already done
+                if not self.scanner.auth_manager.is_authenticated():
+                    await self.scanner.auth_manager.authenticate()
+                
+                # Clear existing groups
+                self.scanner.group_scanner._discovered_groups = []
+                
+                # Discover groups
+                groups = await self.scanner.group_scanner.discover_groups()
+                
+                logger.info(f"Group scan completed: {len(groups)} groups discovered")
+                print(f"\n✓ Group scan completed: {len(groups)} groups discovered")
+                print(f"  Groups cached for future use\n")
+                
+                return {
+                    "success": True,
+                    "message": f"Successfully discovered {len(groups)} groups",
+                    "groups_found": len(groups),
+                    "state": self._state.value
+                }
+                
+            except Exception as e:
+                error_msg = f"Failed to scan groups: {str(e)}"
+                logger.error(error_msg)
+                self._last_error = error_msg
+                self._record_error("scan_command", str(e))
                 
                 return {
                     "success": False,

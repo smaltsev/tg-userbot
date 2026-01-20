@@ -4,8 +4,10 @@ Group discovery and message scanning functionality.
 
 import logging
 import asyncio
+import json
+from pathlib import Path
 from typing import List, Optional, Dict, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from telethon.tl.types import Channel, Chat, User
 from telethon.errors import ChannelPrivateError, ChatAdminRequiredError, FloodWaitError
 from telethon import events
@@ -58,6 +60,7 @@ class GroupScanner:
         self._processing_tasks: List[asyncio.Task] = []
         self.error_handler = ErrorHandler(max_retries=3)
         self._command_interface = None
+        self._groups_cache_file = Path("discovered_groups.json")
         
         # Create rate limiter with config values
         from .error_handling import RateLimiter
@@ -70,6 +73,48 @@ class GroupScanner:
     def set_command_interface(self, command_interface):
         """Set reference to command interface for statistics tracking."""
         self._command_interface = command_interface
+        
+    async def save_discovered_groups(self) -> bool:
+        """Save discovered groups to cache file."""
+        try:
+            if not self._discovered_groups:
+                logger.warning("No groups to save")
+                return False
+                
+            groups_data = [asdict(group) for group in self._discovered_groups]
+            
+            with open(self._groups_cache_file, 'w', encoding='utf-8') as f:
+                json.dump(groups_data, f, indent=2, ensure_ascii=False)
+                
+            logger.info(f"Saved {len(self._discovered_groups)} groups to {self._groups_cache_file}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error saving groups to cache: {e}")
+            return False
+            
+    async def load_discovered_groups(self) -> bool:
+        """Load discovered groups from cache file."""
+        try:
+            if not self._groups_cache_file.exists():
+                logger.info("No cached groups file found")
+                return False
+                
+            with open(self._groups_cache_file, 'r', encoding='utf-8') as f:
+                groups_data = json.load(f)
+                
+            self._discovered_groups = [TelegramGroup(**group) for group in groups_data]
+            
+            logger.info(f"Loaded {len(self._discovered_groups)} groups from cache")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error loading groups from cache: {e}")
+            return False
+            
+    def has_cached_groups(self) -> bool:
+        """Check if cached groups file exists."""
+        return self._groups_cache_file.exists()
         
     async def discover_groups(self) -> List[TelegramGroup]:
         """
@@ -228,6 +273,10 @@ class GroupScanner:
                 timeout=timeout_seconds
             )
             default_health_monitor.record_success("group_discovery")
+            
+            # Save discovered groups to cache
+            await self.save_discovered_groups()
+            
             return result
             
         except asyncio.TimeoutError:
@@ -235,6 +284,8 @@ class GroupScanner:
             # Return partial results if we have any
             if self._discovered_groups:
                 logger.warning(f"Returning {len(self._discovered_groups)} groups discovered before timeout")
+                # Save partial results
+                await self.save_discovered_groups()
                 return self._discovered_groups
             raise ValueError(f"Group discovery timed out after {timeout_seconds/60:.0f} minutes. This may be due to rate limiting or network issues.")
             
@@ -396,23 +447,26 @@ class GroupScanner:
         logger.info("Starting real-time message monitoring...")
         self._monitoring = True
         
-        # Set up event handler for new messages
-        @client.on(events.NewMessage)
+        # Debug mode indicator
+        if self.config.debug_mode:
+            import sys
+            print(f"\n{'='*80}", flush=True)
+            print(f"DEBUG MODE ENABLED - Real-time Monitoring", flush=True)
+            print(f"Will print detailed information for each new message", flush=True)
+            print(f"{'='*80}\n", flush=True)
+        
+        # Get list of group IDs to monitor
+        group_ids = [group.id for group in self._discovered_groups]
+        logger.info(f"Monitoring {len(group_ids)} groups for new messages")
+        
+        # Set up event handler for new messages from monitored groups
+        @client.on(events.NewMessage(chats=group_ids))
         async def new_message_handler(event):
             """Handle new message events."""
             try:
-                # Check if message is from a monitored group
-                if hasattr(event.message, 'peer_id') and event.message.peer_id:
-                    group_id = None
-                    if hasattr(event.message.peer_id, 'channel_id'):
-                        group_id = event.message.peer_id.channel_id
-                    elif hasattr(event.message.peer_id, 'chat_id'):
-                        group_id = event.message.peer_id.chat_id
-                    
-                    if group_id and any(group.id == group_id for group in self._discovered_groups):
-                        # Add message to processing queue for consistent handling
-                        await self._message_queue.put((event.message, client))
-                        logger.debug(f"Queued new message {event.message.id} from group {group_id}")
+                # Add message to processing queue for consistent handling
+                await self._message_queue.put((event.message, client))
+                logger.debug(f"Queued new message {event.message.id} from group {event.chat_id}")
                         
             except Exception as e:
                 logger.error(f"Error in new message handler: {e}")
@@ -499,6 +553,21 @@ class GroupScanner:
                 logger.debug(f"Failed to process message {message.id}")
                 return
             
+            # Debug mode: Print message being processed
+            if self.config.debug_mode:
+                import sys
+                print(f"\n{'='*80}", flush=True)
+                print(f"DEBUG: Processing Message {processed_message.id}", flush=True)
+                print(f"{'='*80}", flush=True)
+                print(f"Group: {processed_message.group_name} (ID: {processed_message.group_id})", flush=True)
+                print(f"Sender: {processed_message.sender_username or 'Unknown'} (ID: {processed_message.sender_id})", flush=True)
+                print(f"Timestamp: {processed_message.timestamp}", flush=True)
+                print(f"Content: {processed_message.content[:200]}{'...' if len(processed_message.content) > 200 else ''}", flush=True)
+                if processed_message.media_type:
+                    print(f"Media Type: {processed_message.media_type}", flush=True)
+                if processed_message.extracted_text:
+                    print(f"Extracted Text: {processed_message.extracted_text[:200]}{'...' if len(processed_message.extracted_text) > 200 else ''}", flush=True)
+            
             # Apply relevance filtering if available
             is_relevant = True
             keywords_matched = []
@@ -507,6 +576,18 @@ class GroupScanner:
                 # Get matched keywords if available
                 if hasattr(self.relevance_filter, '_last_matched_keywords'):
                     keywords_matched = getattr(self.relevance_filter, '_last_matched_keywords', [])
+            
+            # Debug mode: Print relevance results
+            if self.config.debug_mode:
+                import sys
+                print(f"\nRelevance Check:", flush=True)
+                print(f"  Is Relevant: {is_relevant}", flush=True)
+                print(f"  Relevance Score: {processed_message.relevance_score:.2f}", flush=True)
+                if keywords_matched:
+                    print(f"  Matched Keywords: {', '.join(keywords_matched)}", flush=True)
+                else:
+                    print(f"  Matched Keywords: None", flush=True)
+                print(f"{'='*80}\n", flush=True)
             
             # Update command interface statistics if available
             if hasattr(self, '_command_interface') and self._command_interface:
@@ -567,6 +648,14 @@ class GroupScanner:
         logger.info(f"Starting historical message scan for last {days_to_scan} days...")
         logger.info(f"Scanning messages from {cutoff_date.strftime('%Y-%m-%d %H:%M:%S')} to now")
         
+        # Debug mode indicator
+        if self.config.debug_mode:
+            import sys
+            print(f"\n{'='*80}", flush=True)
+            print(f"DEBUG MODE ENABLED", flush=True)
+            print(f"Will print detailed information for each message processed", flush=True)
+            print(f"{'='*80}\n", flush=True)
+        
         total_messages = 0
         relevant_messages = 0
         
@@ -597,10 +686,41 @@ class GroupScanner:
                     if self.message_processor:
                         processed_message = await self.message_processor.process_message(message, client)
                         if processed_message:
+                            # Debug mode: Print message being processed
+                            if self.config.debug_mode:
+                                import sys
+                                print(f"\n{'='*80}", flush=True)
+                                print(f"DEBUG: Processing Historical Message {processed_message.id}", flush=True)
+                                print(f"{'='*80}", flush=True)
+                                print(f"Group: {processed_message.group_name} (ID: {processed_message.group_id})", flush=True)
+                                print(f"Sender: {processed_message.sender_username or 'Unknown'} (ID: {processed_message.sender_id})", flush=True)
+                                print(f"Timestamp: {processed_message.timestamp}", flush=True)
+                                print(f"Content: {processed_message.content[:200]}{'...' if len(processed_message.content) > 200 else ''}", flush=True)
+                                if processed_message.media_type:
+                                    print(f"Media Type: {processed_message.media_type}", flush=True)
+                                if processed_message.extracted_text:
+                                    print(f"Extracted Text: {processed_message.extracted_text[:200]}{'...' if len(processed_message.extracted_text) > 200 else ''}", flush=True)
+                            
                             # Apply relevance filtering
                             is_relevant = True
+                            keywords_matched = []
                             if self.relevance_filter:
                                 is_relevant = await self.relevance_filter.is_relevant(processed_message)
+                                # Get matched keywords if available
+                                if hasattr(self.relevance_filter, '_last_matched_keywords'):
+                                    keywords_matched = getattr(self.relevance_filter, '_last_matched_keywords', [])
+                            
+                            # Debug mode: Print relevance results
+                            if self.config.debug_mode:
+                                import sys
+                                print(f"\nRelevance Check:", flush=True)
+                                print(f"  Is Relevant: {is_relevant}", flush=True)
+                                print(f"  Relevance Score: {processed_message.relevance_score:.2f}", flush=True)
+                                if keywords_matched:
+                                    print(f"  Matched Keywords: {', '.join(keywords_matched)}", flush=True)
+                                else:
+                                    print(f"  Matched Keywords: None", flush=True)
+                                print(f"{'='*80}\n", flush=True)
                             
                             if is_relevant:
                                 relevant_messages += 1

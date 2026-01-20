@@ -1,0 +1,61 @@
+QUICK DEBUG MODE GUIDE
+======================
+
+ENABLE DEBUG MODE:
+------------------
+1. Open config.json
+2. Find "scanning" section
+3. Set "debug_mode": true
+4. Save file
+
+EXAMPLE:
+{
+  "scanning": {
+    "scan_interval": 30,
+    "max_history_days": 1,
+    "selected_groups": [],
+    "debug_mode": true    <-- Change this to true
+  }
+}
+
+RUN SCANNER:
+------------
+python telegram_scanner/main.py
+
+WHAT YOU'LL SEE:
+----------------
+For each message processed, you'll see:
+
+================================================================================
+DEBUG: Processing Message 12345
+================================================================================
+Group: Marketing Jobs (ID: 1234567890)
+Sender: recruiter_bot (ID: 987654321)
+Timestamp: 2026-01-20 10:30:15
+Content: Нужен маркетолог-практик для работы...
+
+Relevance Check:
+  Is Relevant: True
+  Relevance Score: 1.00
+  Matched Keywords: Нужен маркетолог-практик
+================================================================================
+
+DISABLE DEBUG MODE:
+-------------------
+Set "debug_mode": false in config.json
+
+USE CASES:
+----------
+✓ Test if your keywords are matching correctly
+✓ See why certain messages aren't being caught
+✓ Monitor real-time message processing
+✓ Troubleshoot relevance filtering
+
+TIPS:
+-----
+• Use with historical scan to see past messages
+• Redirect output to file: python telegram_scanner/main.py > debug.txt
+• Combine with logging for complete visibility
+• May be overwhelming for high-volume groups
+
+For more details, see DEBUG_MODE.md

@@ -18,6 +18,7 @@ class RelevanceFilter:
         """Initialize relevance filter with configuration."""
         self.config = config
         self._compiled_patterns = {}
+        self._last_matched_keywords = []
         self._compile_regex_patterns()
         
     def _compile_regex_patterns(self):
@@ -45,6 +46,9 @@ class RelevanceFilter:
         # Get matches from both keyword and regex matching
         keyword_matches = await self.match_keywords(content_to_check)
         regex_matches = await self.match_regex(content_to_check)
+        
+        # Store matched keywords for later retrieval
+        self._last_matched_keywords = keyword_matches + regex_matches
         
         # Evaluate criteria based on logical operator
         is_relevant = await self.evaluate_criteria(keyword_matches, regex_matches)

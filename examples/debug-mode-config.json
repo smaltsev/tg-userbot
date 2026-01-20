@@ -1,0 +1,27 @@
+{
+  "api_credentials": {
+    "api_id": "your_api_id_here",
+    "api_hash": "your_api_hash_here"
+  },
+  "scanning": {
+    "scan_interval": 30,
+    "max_history_days": 1,
+    "selected_groups": [],
+    "debug_mode": true
+  },
+  "relevance": {
+    "keywords": [
+      "urgent",
+      "important",
+      "hiring"
+    ],
+    "regex_patterns": [],
+    "logic": "OR"
+  },
+  "rate_limiting": {
+    "requests_per_minute": 30,
+    "flood_wait_multiplier": 1.0,
+    "default_delay": 0.5,
+    "max_wait_time": 300.0
+  }
+}

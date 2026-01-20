@@ -65,6 +65,20 @@ Low-impact configuration for minimal API usage:
 
 **Best for:** Background monitoring, resource-constrained environments
 
+### 6. Debug Mode (`debug-mode-config.json`)
+
+Configuration with debug mode enabled for troubleshooting:
+
+- **Use case:** Testing keywords, troubleshooting, development
+- **Debug mode:** Enabled (prints each message to console)
+- **Scan interval:** 30 seconds
+- **Keywords:** "urgent", "important", "hiring"
+- **Rate limit:** 30 requests/minute
+
+**Best for:** Testing new keywords, troubleshooting relevance filtering, understanding scanner behavior
+
+**See also:** [DEBUG_MODE.md](../DEBUG_MODE.md) for detailed debug mode documentation
+
 ## How to Use These Examples
 
 ### Method 1: Copy and Modify

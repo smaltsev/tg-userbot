@@ -1,0 +1,73 @@
+GROUP CACHING - QUICK REFERENCE
+================================
+
+WHAT IT DOES:
+-------------
+Saves discovered groups to cache file, eliminating 5-10 minute discovery on every startup.
+
+HOW IT WORKS:
+-------------
+1. First time: Discovers groups (5-10 min) → Saves to cache
+2. Next times: Loads from cache (< 1 second)
+3. Manual refresh: Use 'scan' command
+
+COMMANDS:
+---------
+
+start   - Start scanner (uses cache if available)
+          First run: Discovers groups
+          Later runs: Loads from cache instantly
+
+scan    - Force re-discovery (clears cache)
+          Use when: Join/leave groups, want fresh list
+          Requires: Scanner must be stopped first
+
+stop    - Stop scanner (required before 'scan')
+
+list    - View cached groups
+
+TYPICAL WORKFLOW:
+-----------------
+
+# First time or after joining new groups
+Enter command: scan
+[Wait 5-10 minutes]
+
+# Daily use (instant)
+Enter command: start
+✓ Loaded 417 groups from cache
+
+CACHE FILE:
+-----------
+Location: discovered_groups.json
+Size: ~500 KB for 417 groups
+Safe to delete: Will be recreated on next discovery
+
+WHEN TO USE 'scan':
+-------------------
+✓ After joining new groups
+✓ After leaving groups
+✓ Group list seems outdated
+✓ Weekly refresh (recommended)
+
+✗ Don't use on every startup (defeats caching purpose)
+
+TROUBLESHOOTING:
+----------------
+
+Problem: Groups seem outdated
+Solution: stop → scan → start
+
+Problem: Cache not loading
+Solution: Delete discovered_groups.json, then start
+
+Problem: Scan command fails
+Solution: Make sure scanner is stopped first
+
+TIME SAVINGS:
+-------------
+Without caching: 5-10 minutes every startup
+With caching: < 1 second every startup
+Savings: 5-10 minutes per startup!
+
+For more details, see GROUP_CACHING.md

@@ -8,14 +8,27 @@ When running the scanner in interactive mode (`python -m telegram_scanner.main`)
 
 #### `start`
 Start scanning the configured Telegram groups.
-- Discovers groups from your account
+- Loads groups from cache if available (instant)
+- Falls back to discovery if no cache exists (5-10 minutes)
 - Begins monitoring for messages matching your keywords
 - Runs continuously until stopped
 
-**Example:**
+**First Run:**
 ```
 Enter command: start
+No cached groups found. Discovering groups...
+This may take several minutes for large accounts.
+Groups will be cached for future use.
 ```
+
+**Subsequent Runs:**
+```
+Enter command: start
+✓ Loaded 417 groups from cache
+  Use 'scan' command to re-discover groups
+```
+
+**Note:** Groups are cached after first discovery. Use `scan` command to refresh the group list when needed.
 
 #### `stop`
 Stop the scanner and end monitoring.
@@ -27,6 +40,37 @@ Stop the scanner and end monitoring.
 ```
 Enter command: stop
 ```
+
+#### `scan`
+Force re-discovery of groups (clears cache and scans from beginning).
+- Must be run when scanner is stopped
+- Clears cached groups
+- Discovers all groups from Telegram
+- Saves new list to cache
+- Takes 5-10 minutes for large accounts
+
+**Use when:**
+- You join new groups
+- You leave groups
+- Group information seems outdated
+- You want to refresh the group list
+
+**Example:**
+```
+Enter command: scan
+```
+
+**Output:**
+```
+Scanning for groups...
+This will clear cached groups and discover from scratch.
+This may take several minutes for large accounts.
+
+✓ Group scan completed: 417 groups discovered
+  Groups cached for future use
+```
+
+**Note:** Groups are automatically cached after discovery. The `start` command will load from cache on subsequent runs, saving 5-10 minutes. Use `scan` only when you need to refresh the group list.
 
 #### `pause`
 Temporarily pause monitoring without stopping.
@@ -347,12 +391,22 @@ Edit `config.json` to customize scanner behavior:
 - **scan_interval**: Seconds between scans (default: 30)
 - **max_history_days**: Days of history to scan (default: 7)
 - **selected_groups**: List of group names to monitor
+- **debug_mode**: Enable detailed console output for each message (default: false)
 - **keywords**: Keywords to search for in messages
 - **regex_patterns**: Regular expressions for advanced matching
 - **logic**: "OR" or "AND" for keyword matching
 - **requests_per_minute**: API rate limit (default: 30)
 - **default_delay**: Delay between requests in seconds (default: 1.5)
 - **max_wait_time**: Maximum wait time for rate limiting (default: 300)
+
+**Debug Mode:**
+When `debug_mode` is enabled, the scanner prints detailed information to the console for every message processed, including:
+- Message content and metadata
+- Relevance check results
+- Matched keywords
+- Relevance score
+
+See [DEBUG_MODE.md](DEBUG_MODE.md) for detailed documentation.
 
 ## Troubleshooting
 

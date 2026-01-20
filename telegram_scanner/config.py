@@ -25,6 +25,7 @@ class ScannerConfig:
     rate_limit_rpm: int = 20
     default_delay: float = 1.0
     max_wait_time: float = 60.0
+    debug_mode: bool = False
     
     def __post_init__(self):
         """Initialize default values for mutable fields."""
@@ -98,7 +99,8 @@ class ConfigManager:
             "scanning": {
                 "scan_interval": 30,
                 "max_history_days": 7,
-                "selected_groups": []
+                "selected_groups": [],
+                "debug_mode": False
             },
             "relevance": {
                 "keywords": ["important", "urgent"],
@@ -141,6 +143,7 @@ class ConfigManager:
         flattened["scan_interval"] = scanning.get("scan_interval", 30)
         flattened["max_history_days"] = scanning.get("max_history_days", 7)
         flattened["selected_groups"] = scanning.get("selected_groups", [])
+        flattened["debug_mode"] = scanning.get("debug_mode", False)
         
         # Relevance settings
         relevance = config_data.get("relevance", {})
@@ -166,7 +169,8 @@ class ConfigManager:
             "scanning": {
                 "scan_interval": config_dict["scan_interval"],
                 "max_history_days": config_dict["max_history_days"],
-                "selected_groups": config_dict["selected_groups"]
+                "selected_groups": config_dict["selected_groups"],
+                "debug_mode": config_dict.get("debug_mode", False)
             },
             "relevance": {
                 "keywords": config_dict["keywords"],

@@ -126,6 +126,7 @@ dmypy.json
 config.json
 *.session
 *.session-journal
+discovered_groups.json
 data/
 logs/
 exports/

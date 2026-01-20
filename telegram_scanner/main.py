@@ -109,6 +109,7 @@ class TelegramScanner:
         print("Available commands:")
         print("  start   - Start scanning groups")
         print("  stop    - Stop scanning")
+        print("  scan    - Re-discover groups (clears cache)")
         print("  pause   - Pause scanning")
         print("  resume  - Resume scanning")
         print("  status  - Show current status")
@@ -138,6 +139,10 @@ class TelegramScanner:
                     
                 elif command == "resume":
                     result = await self.command_interface.resume_scanning()
+                    print(f"Result: {result}")
+                    
+                elif command == "scan":
+                    result = await self.command_interface.scan_groups()
                     print(f"Result: {result}")
                     
                 elif command == "status":
@@ -208,10 +213,14 @@ class TelegramScanner:
                     print("\nCOMMANDS:")
                     print("\n  start")
                     print("    Start scanning the configured Telegram groups.")
-                    print("    This will discover groups and begin monitoring for")
-                    print("    messages matching your keywords.")
+                    print("    Loads cached groups if available, otherwise discovers them.")
+                    print("    Then begins monitoring for messages matching your keywords.")
                     print("\n  stop")
                     print("    Stop the scanner and end monitoring.")
+                    print("\n  scan")
+                    print("    Re-discover groups from scratch (clears cache).")
+                    print("    Use this when you join/leave groups or want to refresh")
+                    print("    the group list. Scanner must be stopped first.")
                     print("\n  pause")
                     print("    Temporarily pause monitoring without stopping.")
                     print("    Use 'resume' to continue.")
@@ -255,11 +264,12 @@ class TelegramScanner:
                     print("  - rate_limiting: API rate limit settings")
                     print(f"\n{'='*60}")
                     print("\nEXAMPLE WORKFLOW:")
-                    print("  1. Type 'start' to begin scanning")
+                    print("  1. Type 'start' to begin scanning (uses cached groups)")
                     print("  2. Type 'status' to check progress")
                     print("  3. Type 'list' to see discovered groups")
                     print("  4. Type 'report' to see found messages")
-                    print("  5. Type 'stop' when done")
+                    print("  5. Type 'scan' to re-discover groups (if needed)")
+                    print("  6. Type 'stop' when done")
                     print(f"{'='*60}\n")
                     
                 elif command in ["quit", "exit", "q"]:
