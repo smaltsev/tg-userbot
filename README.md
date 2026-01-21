@@ -462,3 +462,13 @@ MIT License - see LICENSE file for details.
 - Use environment variables for sensitive configuration in production
 - Regularly rotate your API credentials
 - Monitor your Telegram account for unusual activity
+
+## Recent Bug Fixes
+
+All critical bugs have been fixed! See [FIXES_APPLIED.md](FIXES_APPLIED.md) for details on:
+- Real-time monitoring now works correctly
+- Race conditions resolved
+- Memory leaks fixed
+- Session security improved
+
+The scanner is now production-ready and fully functional.

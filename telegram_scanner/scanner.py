@@ -61,6 +61,8 @@ class GroupScanner:
         self.error_handler = ErrorHandler(max_retries=3)
         self._command_interface = None
         self._groups_cache_file = Path("discovered_groups.json")
+        self._event_handler = None
+        self._groups_lock = asyncio.Lock()  # Lock for thread-safe group operations
         
         # Create rate limiter with config values
         from .error_handling import RateLimiter
@@ -102,8 +104,9 @@ class GroupScanner:
                 
             with open(self._groups_cache_file, 'r', encoding='utf-8') as f:
                 groups_data = json.load(f)
-                
-            self._discovered_groups = [TelegramGroup(**group) for group in groups_data]
+            
+            async with self._groups_lock:
+                self._discovered_groups = [TelegramGroup(**group) for group in groups_data]
             
             logger.info(f"Loaded {len(self._discovered_groups)} groups from cache")
             return True
@@ -115,6 +118,11 @@ class GroupScanner:
     def has_cached_groups(self) -> bool:
         """Check if cached groups file exists."""
         return self._groups_cache_file.exists()
+    
+    async def clear_discovered_groups(self):
+        """Clear discovered groups list safely."""
+        async with self._groups_lock:
+            self._discovered_groups.clear()
         
     async def discover_groups(self) -> List[TelegramGroup]:
         """
@@ -169,7 +177,8 @@ class GroupScanner:
                 # If we found all groups by direct search, we're done
                 if len(discovered_groups) == len(self.config.selected_groups):
                     logger.info(f"Found all {len(discovered_groups)} selected groups by direct search")
-                    self._discovered_groups = discovered_groups
+                    async with self._groups_lock:
+                        self._discovered_groups = discovered_groups
                     await self._display_group_info(discovered_groups)
                     return discovered_groups
                 
@@ -251,8 +260,9 @@ class GroupScanner:
                     logger.info(f"Partial discovery completed with {len(discovered_groups)} groups before error")
                 else:
                     raise
-                        
-            self._discovered_groups = discovered_groups
+            
+            async with self._groups_lock:
+                self._discovered_groups = discovered_groups
             logger.info(f"Group discovery completed. Found {len(discovered_groups)} accessible groups from {dialog_count} total dialogs")
             
             # Display group information
@@ -310,13 +320,15 @@ class GroupScanner:
             
     async def get_discovered_groups(self) -> List[TelegramGroup]:
         """Get previously discovered groups without re-scanning."""
-        return self._discovered_groups.copy()
+        async with self._groups_lock:
+            return self._discovered_groups.copy()
         
     async def get_group_by_id(self, group_id: int) -> Optional[TelegramGroup]:
         """Get a specific group by ID from discovered groups."""
-        for group in self._discovered_groups:
-            if group.id == group_id:
-                return group
+        async with self._groups_lock:
+            for group in self._discovered_groups:
+                if group.id == group_id:
+                    return group
         return None
         
     async def get_groups_by_name(self, name_pattern: str) -> List[TelegramGroup]:
@@ -324,10 +336,11 @@ class GroupScanner:
         pattern = name_pattern.lower()
         matching_groups = []
         
-        for group in self._discovered_groups:
-            if (pattern in group.title.lower() or 
-                (group.username and pattern in group.username.lower())):
-                matching_groups.append(group)
+        async with self._groups_lock:
+            for group in self._discovered_groups:
+                if (pattern in group.title.lower() or 
+                    (group.username and pattern in group.username.lower())):
+                    matching_groups.append(group)
                 
         return matching_groups
         
@@ -456,11 +469,11 @@ class GroupScanner:
             print(f"{'='*80}\n", flush=True)
         
         # Get list of group IDs to monitor
-        group_ids = [group.id for group in self._discovered_groups]
+        async with self._groups_lock:
+            group_ids = [group.id for group in self._discovered_groups]
         logger.info(f"Monitoring {len(group_ids)} groups for new messages")
         
-        # Set up event handler for new messages from monitored groups
-        @client.on(events.NewMessage(chats=group_ids))
+        # Define event handler for new messages from monitored groups
         async def new_message_handler(event):
             """Handle new message events."""
             try:
@@ -471,13 +484,30 @@ class GroupScanner:
             except Exception as e:
                 logger.error(f"Error in new message handler: {e}")
         
+        # Register the event handler with the client
+        # Use add_event_handler instead of decorator for runtime registration
+        client.add_event_handler(
+            new_message_handler,
+            events.NewMessage(chats=group_ids)
+        )
+        
+        # Store handler reference for cleanup
+        self._event_handler = new_message_handler
+        
         # Start message processing workers
-        num_workers = min(3, len(self._discovered_groups))  # Limit concurrent processing
+        num_workers = min(3, len(group_ids))  # Limit concurrent processing
         for i in range(num_workers):
             task = asyncio.create_task(self._message_processing_worker(f"worker-{i}"))
             self._processing_tasks.append(task)
         
+        # Start a background task to keep the client running
+        self._monitoring_task = asyncio.create_task(self._keep_client_running())
+        
+        # Give tasks a moment to start
+        await asyncio.sleep(0.1)
+        
         logger.info(f"Real-time monitoring started with {num_workers} processing workers")
+        logger.info("Monitoring task is now running in background - new messages will be processed automatically")
         
     async def stop_monitoring(self):
         """Stop real-time message monitoring."""
@@ -488,12 +518,46 @@ class GroupScanner:
         logger.info("Stopping real-time message monitoring...")
         self._monitoring = False
         
+        # Cancel monitoring task first
+        if self._monitoring_task and not self._monitoring_task.done():
+            self._monitoring_task.cancel()
+            try:
+                await self._monitoring_task
+            except asyncio.CancelledError:
+                pass
+            self._monitoring_task = None
+        
+        # Remove event handler from client
+        if self._event_handler:
+            try:
+                client = await self.auth_manager.get_client()
+                if client:
+                    client.remove_event_handler(self._event_handler)
+                    logger.debug("Removed event handler from client")
+            except Exception as e:
+                logger.warning(f"Error removing event handler: {e}")
+            finally:
+                self._event_handler = None
+        
         # Cancel all processing tasks
         for task in self._processing_tasks:
             if not task.done():
                 task.cancel()
         
         # Wait for tasks to complete
+        if self._processing_tasks:
+            await asyncio.gather(*self._processing_tasks, return_exceptions=True)
+        
+        self._processing_tasks.clear()
+        
+        # Clear any remaining messages in queue
+        while not self._message_queue.empty():
+            try:
+                self._message_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+                
+        logger.info("Real-time monitoring stopped")
         if self._processing_tasks:
             await asyncio.gather(*self._processing_tasks, return_exceptions=True)
         
@@ -535,6 +599,39 @@ class GroupScanner:
                 continue
                 
         logger.debug(f"Message processing worker {worker_name} stopped")
+    
+    async def _keep_client_running(self):
+        """
+        Keep the Telegram client running to receive events.
+        This task runs in the background while monitoring is active.
+        """
+        logger.info("Client monitoring task started - listening for new messages")
+        client = await self.auth_manager.get_client()
+        
+        try:
+            while self._monitoring:
+                # Process any pending updates from Telegram
+                # This is crucial - without this, event handlers won't be triggered
+                try:
+                    # Give the client a chance to process updates
+                    await asyncio.sleep(0.1)  # Short sleep to allow event processing
+                    
+                    # Periodically check if client is still connected
+                    if not client.is_connected():
+                        logger.warning("Client disconnected, attempting to reconnect...")
+                        await client.connect()
+                        logger.info("Client reconnected")
+                    
+                except Exception as e:
+                    logger.error(f"Error in monitoring loop: {e}")
+                    await asyncio.sleep(1)  # Wait before retrying
+                    
+        except asyncio.CancelledError:
+            logger.debug("Client monitoring task cancelled")
+        except Exception as e:
+            logger.error(f"Error in client monitoring task: {e}")
+        finally:
+            logger.info("Client monitoring task stopped")
         
     @handle_message_processing_errors
     async def handle_new_message(self, message, client):

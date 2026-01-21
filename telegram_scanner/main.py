@@ -123,7 +123,10 @@ class TelegramScanner:
         
         while True:
             try:
-                command = input("\nEnter command: ").strip().lower()
+                # Use asyncio-friendly input to allow background tasks to run
+                # We need to run input() in a thread pool to not block the event loop
+                loop = asyncio.get_event_loop()
+                command = await loop.run_in_executor(None, lambda: input("\nEnter command: ").strip().lower())
                 
                 if command == "start":
                     result = await self.command_interface.start_scanning()

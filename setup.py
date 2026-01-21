@@ -3,16 +3,23 @@ Setup script for Telegram Group Scanner package.
 """
 
 from setuptools import setup, find_packages
+from pathlib import Path
 
 with open("requirements.txt", "r", encoding="utf-8") as f:
     requirements = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+
+# Read long description safely
+try:
+    long_description = Path("README.md").read_text(encoding="utf-8")
+except FileNotFoundError:
+    long_description = ""
 
 setup(
     name="telegram-group-scanner",
     version="1.0.0",
     author="Telegram Scanner Team",
     description="A Python application for monitoring Telegram groups and extracting relevant information",
-    long_description=open("README.md", "r", encoding="utf-8").read() if open("README.md", "r", encoding="utf-8") else "",
+    long_description=long_description,
     long_description_content_type="text/markdown",
     packages=find_packages(),
     install_requires=requirements,

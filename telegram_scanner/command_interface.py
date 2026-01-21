@@ -329,8 +329,8 @@ class CommandInterface:
                 if not self.scanner.auth_manager.is_authenticated():
                     await self.scanner.auth_manager.authenticate()
                 
-                # Clear existing groups
-                self.scanner.group_scanner._discovered_groups = []
+                # Clear existing groups using proper method
+                await self.scanner.group_scanner.clear_discovered_groups()
                 
                 # Discover groups
                 groups = await self.scanner.group_scanner.discover_groups()

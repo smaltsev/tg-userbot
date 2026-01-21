@@ -39,10 +39,11 @@ class NetworkConnectivityError(Exception):
 class ErrorHandler:
     """Centralized error handling and retry logic."""
     
-    def __init__(self, max_retries: int = 3, base_delay: float = 1.0):
+    def __init__(self, max_retries: int = 3, base_delay: float = 1.0, max_log_entries: int = 100):
         """Initialize error handler with configuration."""
         self.max_retries = max_retries
         self.base_delay = base_delay
+        self.max_log_entries = max_log_entries
         self.operation_logs: Dict[str, Any] = {}
         
     async def with_retry(self, 
@@ -164,6 +165,11 @@ class ErrorHandler:
         
         if operation not in self.operation_logs:
             self.operation_logs[operation] = []
+        
+        # Implement log rotation to prevent memory leak
+        if len(self.operation_logs[operation]) >= self.max_log_entries:
+            self.operation_logs[operation].pop(0)
+        
         self.operation_logs[operation].append(log_entry)
         
         if attempts > 0:
@@ -184,6 +190,11 @@ class ErrorHandler:
         
         if operation not in self.operation_logs:
             self.operation_logs[operation] = []
+        
+        # Implement log rotation to prevent memory leak
+        if len(self.operation_logs[operation]) >= self.max_log_entries:
+            self.operation_logs[operation].pop(0)
+        
         self.operation_logs[operation].append(log_entry)
     
     def _log_operation_failure(self, operation: str, total_attempts: int, last_error: Exception):
@@ -199,6 +210,11 @@ class ErrorHandler:
         
         if operation not in self.operation_logs:
             self.operation_logs[operation] = []
+        
+        # Implement log rotation to prevent memory leak
+        if len(self.operation_logs[operation]) >= self.max_log_entries:
+            self.operation_logs[operation].pop(0)
+        
         self.operation_logs[operation].append(log_entry)
     
     def get_operation_logs(self, operation: Optional[str] = None) -> Dict[str, Any]:

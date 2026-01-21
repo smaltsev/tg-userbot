@@ -70,6 +70,7 @@ class AuthenticationManager:
             try:
                 await self._client.sign_in(phone, code)
                 self._authenticated = True
+                self._set_session_permissions()
                 logger.info("Authentication successful")
                 default_health_monitor.record_success("authentication")
                 return True
@@ -79,6 +80,7 @@ class AuthenticationManager:
                 password = await self._prompt_2fa_password()
                 await self._client.sign_in(password=password)
                 self._authenticated = True
+                self._set_session_permissions()
                 logger.info("Authentication successful with 2FA")
                 default_health_monitor.record_success("authentication")
                 return True
@@ -137,6 +139,7 @@ class AuthenticationManager:
             
             if await self._client.is_user_authorized():
                 self._authenticated = True
+                self._set_session_permissions()
                 logger.info("Session loaded successfully")
                 default_health_monitor.record_success("session_load")
                 return True
@@ -165,6 +168,18 @@ class AuthenticationManager:
     def is_authenticated(self) -> bool:
         """Check authentication status."""
         return self._authenticated and self._client is not None
+    
+    def _set_session_permissions(self):
+        """Set restrictive permissions on session file for security."""
+        import os
+        import stat
+        if self.session_path.exists():
+            try:
+                # Set to owner read/write only (0o600)
+                os.chmod(self.session_path, stat.S_IRUSR | stat.S_IWUSR)
+                logger.debug(f"Set restrictive permissions on {self.session_path}")
+            except Exception as e:
+                logger.warning(f"Could not set session file permissions: {e}")
         
     async def ensure_authenticated(self) -> bool:
         """Ensure we have a valid authenticated session."""
