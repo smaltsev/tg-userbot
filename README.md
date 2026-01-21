@@ -1,474 +1,556 @@
 # Telegram Group Scanner
 
-A Python application for monitoring Telegram groups and extracting relevant information using the Telethon library. The scanner authenticates as a user, discovers accessible groups, and monitors messages in real-time to identify and extract content matching specified criteria.
+A production-ready Python application for monitoring Telegram groups and extracting relevant information in real-time.
 
 ## Features
 
-- **User Authentication**: Secure authentication with Telegram API using user credentials
-- **Group Discovery**: Automatic discovery and monitoring of accessible Telegram groups
-- **Real-time Processing**: Live message monitoring with event-driven architecture
-- **Content Extraction**: Text extraction from messages and OCR from images
-- **Smart Filtering**: Configurable relevance filtering with keywords and regex patterns
-- **Data Management**: JSON-based storage with duplicate detection and export capabilities
-- **Error Resilience**: Robust error handling, rate limiting, and automatic retry mechanisms
-- **Interactive Control**: Command-line interface for real-time control and monitoring
+- 🔐 **Secure Authentication** - User-based Telegram API authentication
+- 🔍 **Smart Discovery** - Automatic group discovery with caching
+- ⚡ **Real-Time Monitoring** - Event-driven message processing
+- 🎯 **Intelligent Filtering** - Keyword and regex-based relevance detection
+- 💾 **Data Management** - JSON storage with duplicate detection
+- 🛡️ **Error Resilience** - Comprehensive error handling and retry logic
+- 🎮 **Interactive Control** - Command-line interface for live management
+- 📊 **OCR Support** - Text extraction from images using Tesseract
 
-## Table of Contents
+---
 
-- [Installation](#installation)
-- [Getting Telegram API Credentials](#getting-telegram-api-credentials)
-- [Configuration](#configuration)
-- [Usage](#usage)
-- [Command Reference](#command-reference)
-- [Configuration Reference](#configuration-reference)
-- [Examples](#examples)
-- [Troubleshooting](#troubleshooting)
-- [Development](#development)
-- [License](#license)
+## Quick Start
 
-## Installation
+### 1. Installation
 
-### Prerequisites
-
-- Python 3.8 or higher
-- Tesseract OCR (for image text extraction)
-
-### Install Tesseract OCR
-
-**Ubuntu/Debian:**
 ```bash
-sudo apt-get update
-sudo apt-get install tesseract-ocr
+# Clone repository
+git clone <repository-url>
+cd telegram-group-scanner
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Install Tesseract OCR
+# Ubuntu/Debian: sudo apt-get install tesseract-ocr
+# macOS: brew install tesseract
+# Windows: Download from https://github.com/UB-Mannheim/tesseract/wiki
 ```
 
-**macOS:**
-```bash
-brew install tesseract
-```
+### 2. Get Telegram API Credentials
 
-**Windows:**
-Download and install from: https://github.com/UB-Mannheim/tesseract/wiki
+1. Go to https://my.telegram.org/auth
+2. Log in with your phone number
+3. Click "API development tools"
+4. Create a new application
+5. Copy your `api_id` and `api_hash`
 
-### Install the Scanner
+### 3. Configure
 
-1. **Clone the repository:**
-   ```bash
-   git clone <repository-url>
-   cd telegram-group-scanner
-   ```
-
-2. **Create a virtual environment (recommended):**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Install the package:**
-   ```bash
-   pip install -e .
-   ```
-
-## Getting Telegram API Credentials
-
-Before using the scanner, you need to obtain Telegram API credentials:
-
-1. **Visit the Telegram API Development Tools:**
-   Go to https://my.telegram.org/apps
-
-2. **Log in with your Telegram account:**
-   Use your phone number and verification code
-
-3. **Create a new application:**
-   - App title: "Telegram Group Scanner" (or any name you prefer)
-   - Short name: "scanner" (or any short identifier)
-   - Platform: Choose "Desktop"
-   - Description: Optional
-
-4. **Save your credentials:**
-   - **API ID**: A numeric identifier (e.g., 1234567)
-   - **API Hash**: A string hash (e.g., "abcdef1234567890abcdef1234567890")
-
-⚠️ **Important**: Keep these credentials secure and never share them publicly.
-
-## Configuration
-
-### Initial Setup
-
-On first run, the scanner creates a default configuration file at `config.json`. You must update this file with your API credentials before the scanner can function.
-
-### Configuration File Structure
-
-The configuration file uses a nested JSON structure:
+Edit `config.json`:
 
 ```json
 {
   "api_credentials": {
-    "api_id": "your_api_id_here",
-    "api_hash": "your_api_hash_here"
+    "api_id": "YOUR_API_ID",
+    "api_hash": "YOUR_API_HASH"
   },
   "scanning": {
     "scan_interval": 30,
     "max_history_days": 7,
-    "selected_groups": []
+    "selected_groups": ["GroupName1", "GroupName2"],
+    "debug_mode": false
   },
   "relevance": {
-    "keywords": ["important", "urgent"],
+    "keywords": ["urgent", "important", "breaking"],
     "regex_patterns": [],
     "logic": "OR"
   },
   "rate_limiting": {
-    "requests_per_minute": 20,
-    "flood_wait_multiplier": 1.5
+    "requests_per_minute": 30,
+    "flood_wait_multiplier": 1.0,
+    "default_delay": 0.5,
+    "max_wait_time": 300.0
   }
 }
 ```
 
+### 4. Run
+
+```bash
+python -m telegram_scanner.cli
+```
+
+---
+
 ## Usage
 
-### Interactive Mode (Default)
-
-Start the scanner in interactive mode for real-time control:
+### Interactive Mode
 
 ```bash
-telegram-scanner
+python -m telegram_scanner.cli
 ```
 
-Or using Python module:
-
-```bash
-python -m telegram_scanner.main
-```
+**Available Commands:**
+- `start` - Start scanning and monitoring
+- `stop` - Stop scanning
+- `scan` - Re-discover groups (clears cache)
+- `pause` - Pause monitoring
+- `resume` - Resume monitoring
+- `status` - Show current status
+- `report` - Generate scanning report
+- `list` - List discovered groups
+- `config` - Show configuration
+- `reload` - Reload configuration
+- `help` - Show help
+- `quit` - Exit application
 
 ### Batch Mode
 
-Run the scanner in batch mode for automated operation:
-
 ```bash
 # Run indefinitely
-telegram-scanner --batch
+python -m telegram_scanner.cli --batch
 
-# Run for specific duration (60 minutes)
-telegram-scanner --batch --duration 60
+# Run for specific duration (minutes)
+python -m telegram_scanner.cli --batch --duration 60
+
+# Test group discovery only
+python -m telegram_scanner.cli --test-discovery
 ```
 
-### Custom Configuration
-
-Use a custom configuration file:
-
-```bash
-telegram-scanner --config /path/to/custom-config.json
-```
-
-### Logging Options
-
-Control logging level and output:
-
-```bash
-# Debug logging to console
-telegram-scanner --log-level DEBUG
-
-# Log to file
-telegram-scanner --log-file scanner.log
-
-# Both console and file with custom level
-telegram-scanner --log-level INFO --log-file scanner.log
-```
-
-## Command Reference
-
-### Command Line Arguments
-
-| Argument | Short | Description | Default |
-|----------|-------|-------------|---------|
-| `--config` | `-c` | Configuration file path | `config.json` |
-| `--batch` | `-b` | Run in batch mode (non-interactive) | Interactive mode |
-| `--duration` | `-d` | Duration in minutes for batch mode | Run indefinitely |
-| `--log-level` | `-l` | Logging level (DEBUG/INFO/WARNING/ERROR) | `INFO` |
-| `--log-file` | `-f` | Log file path | Console only |
-| `--version` | `-v` | Show version information | - |
-| `--help` | `-h` | Show help message | - |
-
-### Interactive Commands
-
-When running in interactive mode, use these commands:
-
-| Command | Description |
-|---------|-------------|
-| `start` | Start scanning groups |
-| `stop` | Stop scanning |
-| `pause` | Pause scanning (can be resumed) |
-| `resume` | Resume paused scanning |
-| `status` | Show current status and statistics |
-| `report` | Generate detailed scanning report |
-| `config` | Display current configuration |
-| `reload` | Reload configuration from file |
-| `quit` | Exit application |
+---
 
 ## Configuration Reference
 
 ### API Credentials
 
 ```json
-"api_credentials": {
-  "api_id": "1234567",
-  "api_hash": "abcdef1234567890abcdef1234567890"
+{
+  "api_credentials": {
+    "api_id": "12345678",
+    "api_hash": "abcdef1234567890abcdef1234567890"
+  }
 }
 ```
 
-- **api_id**: Your Telegram API ID (numeric)
-- **api_hash**: Your Telegram API hash (string)
+**Required:** Get from https://my.telegram.org/auth
 
-### Scanning Settings
+### Scanning Options
 
 ```json
-"scanning": {
-  "scan_interval": 30,
-  "max_history_days": 7,
-  "selected_groups": ["group1", "group2"]
+{
+  "scanning": {
+    "scan_interval": 30,
+    "max_history_days": 7,
+    "selected_groups": [],
+    "debug_mode": false
+  }
 }
 ```
 
-- **scan_interval**: Seconds between scans (default: 30)
-- **max_history_days**: Days of message history to scan (default: 7)
-- **selected_groups**: Specific groups to monitor (empty = all accessible groups)
+- **scan_interval**: Seconds between scans (not used in real-time mode)
+- **max_history_days**: Days of history to scan on startup (0 = skip historical scan)
+- **selected_groups**: List of group names to monitor (empty = all groups)
+- **debug_mode**: Enable detailed logging
 
 ### Relevance Filtering
 
 ```json
-"relevance": {
-  "keywords": ["important", "urgent", "breaking"],
-  "regex_patterns": ["\\d{4}-\\d{2}-\\d{2}", "USD \\$\\d+"],
-  "logic": "OR"
-}
-```
-
-- **keywords**: List of keywords to match (case-insensitive)
-- **regex_patterns**: Regular expression patterns for advanced matching
-- **logic**: Logical operator for multiple criteria ("OR" or "AND")
-
-### Rate Limiting
-
-```json
-"rate_limiting": {
-  "requests_per_minute": 20,
-  "flood_wait_multiplier": 1.5
-}
-```
-
-- **requests_per_minute**: Maximum API requests per minute (default: 20)
-- **flood_wait_multiplier**: Multiplier for Telegram's flood wait time (default: 1.5)
-
-## Examples
-
-### Example 1: Basic Setup
-
-1. **Create configuration:**
-   ```bash
-   telegram-scanner  # Creates default config.json
-   ```
-
-2. **Edit config.json:**
-   ```json
-   {
-     "api_credentials": {
-       "api_id": "1234567",
-       "api_hash": "your_actual_api_hash"
-     },
-     "relevance": {
-       "keywords": ["bitcoin", "crypto", "trading"],
-       "logic": "OR"
-     }
-   }
-   ```
-
-3. **Start scanning:**
-   ```bash
-   telegram-scanner
-   ```
-
-### Example 2: Advanced Filtering
-
-Configuration for monitoring specific patterns:
-
-```json
 {
-  "api_credentials": {
-    "api_id": "1234567",
-    "api_hash": "your_api_hash"
-  },
-  "scanning": {
-    "scan_interval": 15,
-    "max_history_days": 3,
-    "selected_groups": ["CryptoNews", "TechUpdates"]
-  },
   "relevance": {
-    "keywords": ["breaking", "urgent", "alert"],
-    "regex_patterns": [
-      "\\$[0-9,]+",
-      "\\b\\d{1,2}/\\d{1,2}/\\d{4}\\b",
-      "\\b[A-Z]{3,4}\\b"
-    ],
+    "keywords": ["urgent", "breaking", "alert"],
+    "regex_patterns": ["\\d{4}-\\d{2}-\\d{2}"],
     "logic": "OR"
   }
 }
 ```
 
-### Example 3: Batch Processing
+- **keywords**: List of keywords to match (case-insensitive)
+- **regex_patterns**: List of regex patterns
+- **logic**: "OR" (any match) or "AND" (all must match)
 
-Run for 2 hours with debug logging:
+### Rate Limiting
 
-```bash
-telegram-scanner --batch --duration 120 --log-level DEBUG --log-file scanner.log
+```json
+{
+  "rate_limiting": {
+    "requests_per_minute": 30,
+    "flood_wait_multiplier": 1.0,
+    "default_delay": 0.5,
+    "max_wait_time": 300.0
+  }
+}
 ```
 
-### Example 4: Multiple Configurations
+- **requests_per_minute**: Max API requests per minute
+- **flood_wait_multiplier**: Multiplier for Telegram flood wait
+- **default_delay**: Delay between requests (seconds)
+- **max_wait_time**: Maximum wait time for rate limiting (seconds)
 
-Use different configurations for different purposes:
+---
 
-```bash
-# Monitor crypto groups
-telegram-scanner --config crypto-config.json
+## Features in Detail
 
-# Monitor news groups
-telegram-scanner --config news-config.json
+### Real-Time Monitoring
+
+The scanner uses Telegram's event system to detect new messages instantly:
+
+1. Registers event handlers for monitored groups
+2. Processes messages in background workers
+3. Applies relevance filters
+4. Stores matching messages
+5. Updates statistics in real-time
+
+**Performance:**
+- Message detection: 1-2 seconds
+- Concurrent processing: 3 workers
+- Non-blocking: Interactive commands work while monitoring
+
+### Group Discovery
+
+Automatically discovers accessible groups:
+
+1. Loads cached groups (if available)
+2. Discovers new groups from dialogs
+3. Filters by selected groups (if configured)
+4. Caches results for fast startup
+
+**Cache Management:**
+- Groups cached in `discovered_groups.json`
+- Use `scan` command to refresh
+- Automatic on first run
+
+### Historical Scanning
+
+Scans past messages on startup:
+
+```json
+{
+  "scanning": {
+    "max_history_days": 7
+  }
+}
 ```
+
+**Skip Historical Scan:**
+Set `max_history_days: 0` to only monitor new messages (faster startup).
+
+### Data Storage
+
+Messages stored in `telegram_scanner_data.json`:
+
+```json
+{
+  "id": 12345,
+  "timestamp": "2026-01-21T10:30:00",
+  "group_id": 67890,
+  "group_name": "Example Group",
+  "sender_id": 11111,
+  "sender_username": "user123",
+  "content": "Message text",
+  "media_type": "photo",
+  "extracted_text": "Text from image",
+  "relevance_score": 0.75,
+  "matched_criteria": ["urgent", "breaking"]
+}
+```
+
+**Features:**
+- Automatic duplicate detection
+- Export to JSON, CSV, or TXT
+- Statistics tracking
+
+---
 
 ## Troubleshooting
 
-### Common Issues
+### Authentication Issues
 
-**1. Authentication Failed**
-```
-Error: Authentication failed
-```
-- Verify your API ID and API hash are correct
-- Ensure you have a stable internet connection
-- Check if your Telegram account is not restricted
+**Problem:** "Authentication required"
 
-**2. No Groups Found**
-```
-Warning: No accessible groups found
-```
-- Make sure you're a member of Telegram groups
-- Check if groups are public or if you have proper access
-- Verify your account is not restricted from accessing groups
+**Solution:**
+1. Verify API credentials in config.json
+2. Delete `telegram_scanner.session` file
+3. Restart and re-authenticate
 
-**3. Rate Limiting**
-```
-Error: FloodWaitError: Too many requests
-```
-- Reduce `requests_per_minute` in configuration
-- Increase `scan_interval` to scan less frequently
-- The scanner automatically handles rate limits with exponential backoff
+### No Messages Detected
 
-**4. OCR Not Working**
-```
-Error: Tesseract not found
-```
-- Install Tesseract OCR (see Installation section)
-- Ensure Tesseract is in your system PATH
-- On Windows, you may need to specify the Tesseract path
+**Problem:** Real-time monitoring not working
 
-**5. Configuration Errors**
-```
-Error: Invalid configuration file
-```
-- Validate your JSON syntax using a JSON validator
-- Ensure all required fields are present
-- Check for trailing commas or syntax errors
+**Checklist:**
+1. ✅ Check `status` - should show "running"
+2. ✅ Verify groups with `list` command
+3. ✅ Check keywords match your test messages
+4. ✅ Look for worker startup in logs
+5. ✅ Ensure `max_history_days` is not 0 if you want historical scan
 
-### Debug Mode
+**Expected Logs:**
+```
+Real-time monitoring started with 3 processing workers
+Monitoring task is now running in background
+Client monitoring task started - listening for new messages
+Message processing worker worker-0 started
+Message processing worker worker-1 started
+Message processing worker worker-2 started
+```
 
-Enable debug logging for detailed troubleshooting:
+### Rate Limiting
+
+**Problem:** "FloodWaitError" or slow performance
+
+**Solution:**
+1. Increase `default_delay` in config
+2. Decrease `requests_per_minute`
+3. Wait for rate limit to reset
+
+### Database Locked
+
+**Problem:** "database is locked" error
+
+**Solution:**
+1. Close other instances of the scanner
+2. Delete `telegram_scanner.session-journal` file
+3. Restart the scanner
+
+---
+
+## Debug Mode
+
+Enable detailed logging:
+
+```json
+{
+  "scanning": {
+    "debug_mode": true
+  }
+}
+```
+
+**Output:**
+```
+================================================================================
+DEBUG: Processing Message 12345
+================================================================================
+Group: Example Group (ID: 67890)
+Sender: user123 (ID: 11111)
+Timestamp: 2026-01-21 10:30:00
+Content: Message text here...
+
+Relevance Check:
+  Is Relevant: True
+  Relevance Score: 0.75
+  Matched Keywords: urgent, breaking
+================================================================================
+```
+
+---
+
+## Production Deployment
+
+### Environment Variables
+
+For production, use environment variables instead of config.json:
 
 ```bash
-telegram-scanner --log-level DEBUG --log-file debug.log
+export TELEGRAM_API_ID="12345678"
+export TELEGRAM_API_HASH="abcdef1234567890"
+export TELEGRAM_KEYWORDS="urgent,breaking,alert"
 ```
 
-### Getting Help
+### Systemd Service (Linux)
 
-1. Check the log files for detailed error messages
-2. Verify your configuration against the examples
-3. Ensure all dependencies are properly installed
-4. Test with a minimal configuration first
+Create `/etc/systemd/system/telegram-scanner.service`:
 
-## Development
+```ini
+[Unit]
+Description=Telegram Group Scanner
+After=network.target
 
-### Running Tests
+[Service]
+Type=simple
+User=telegram
+WorkingDirectory=/opt/telegram-scanner
+ExecStart=/usr/bin/python3 -m telegram_scanner.cli --batch
+Restart=always
+RestartSec=10
 
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
 ```bash
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=telegram_scanner
-
-# Run property-based tests only
-pytest -k "properties"
+sudo systemctl enable telegram-scanner
+sudo systemctl start telegram-scanner
+sudo systemctl status telegram-scanner
 ```
 
-### Code Quality
+### Docker
 
+```dockerfile
+FROM python:3.11-slim
+
+# Install Tesseract
+RUN apt-get update && apt-get install -y tesseract-ocr && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application
+COPY telegram_scanner /app/telegram_scanner
+COPY config.json /app/
+WORKDIR /app
+
+# Run
+CMD ["python", "-m", "telegram_scanner.cli", "--batch"]
+```
+
+Build and run:
 ```bash
-# Format code
-black telegram_scanner/
-
-# Lint code
-flake8 telegram_scanner/
-
-# Type checking
-mypy telegram_scanner/
+docker build -t telegram-scanner .
+docker run -d --name scanner -v $(pwd)/config.json:/app/config.json telegram-scanner
 ```
 
-### Project Structure
+---
+
+## Security Best Practices
+
+1. **Never commit credentials** - Use `.gitignore` for config.json
+2. **Restrict session file permissions** - Automatically set to 0600
+3. **Use environment variables** - For production deployments
+4. **Rotate API credentials** - Regularly update your API keys
+5. **Monitor account activity** - Check for unusual Telegram activity
+6. **Limit group access** - Only monitor necessary groups
+7. **Secure storage** - Protect `telegram_scanner_data.json`
+
+---
+
+## Performance Tips
+
+1. **Skip historical scan** - Set `max_history_days: 0` for faster startup
+2. **Limit groups** - Use `selected_groups` to monitor specific groups only
+3. **Optimize keywords** - Use specific keywords to reduce false positives
+4. **Adjust rate limits** - Balance speed vs. API limits
+5. **Use batch mode** - For unattended operation
+6. **Monitor resources** - Check CPU/memory usage with large groups
+
+---
+
+## Project Structure
 
 ```
-telegram_scanner/
-├── __init__.py
-├── main.py              # Main application entry point
-├── cli.py               # Command-line interface
-├── auth.py              # Authentication management
-├── scanner.py           # Group scanning and monitoring
-├── processor.py         # Message processing and extraction
-├── filter.py            # Relevance filtering
-├── storage.py           # Data storage and export
-├── config.py            # Configuration management
-├── command_interface.py # Interactive command interface
-├── error_handling.py    # Error handling utilities
-└── models.py            # Data models and structures
+telegram-group-scanner/
+├── telegram_scanner/
+│   ├── __init__.py
+│   ├── main.py              # Application entry point
+│   ├── cli.py               # CLI interface
+│   ├── auth.py              # Authentication management
+│   ├── scanner.py           # Group scanning and monitoring
+│   ├── processor.py         # Message processing
+│   ├── filter.py            # Relevance filtering
+│   ├── storage.py           # Data storage
+│   ├── config.py            # Configuration management
+│   ├── command_interface.py # Interactive commands
+│   ├── error_handling.py    # Error handling utilities
+│   └── models.py            # Data models
+├── examples/
+│   ├── basic-config.json
+│   ├── high-frequency-config.json
+│   └── news-monitoring-config.json
+├── config.json              # Main configuration
+├── requirements.txt         # Python dependencies
+├── setup.py                 # Package setup
+├── .gitignore              # Git ignore rules
+└── README.md               # This file
 ```
+
+---
+
+## Requirements
+
+- Python 3.8+
+- Tesseract OCR
+- Active Telegram account
+- Telegram API credentials
+
+**Python Dependencies:**
+- telethon >= 1.30.0
+- Pillow >= 10.0.0
+- pytesseract >= 0.3.10
+- python-dateutil >= 2.8.2
+
+---
 
 ## License
 
-MIT License - see LICENSE file for details.
+MIT License - See LICENSE file for details
 
-## Contributing
+---
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass
-6. Submit a pull request
+## Support
 
-## Security
+**Logs:** Check `scanner.log` for detailed error messages
 
-- Never commit API credentials to version control
-- Use environment variables for sensitive configuration in production
-- Regularly rotate your API credentials
-- Monitor your Telegram account for unusual activity
+**Issues:** Common issues and solutions in Troubleshooting section above
 
-## Recent Bug Fixes
+**Configuration:** All options documented in Configuration Reference
 
-All critical bugs have been fixed! See [FIXES_APPLIED.md](FIXES_APPLIED.md) for details on:
-- Real-time monitoring now works correctly
-- Race conditions resolved
-- Memory leaks fixed
-- Session security improved
+---
 
-The scanner is now production-ready and fully functional.
+## Changelog
+
+### Version 1.0.0 (2026-01-21)
+
+**Features:**
+- ✅ Real-time message monitoring
+- ✅ Group discovery with caching
+- ✅ Keyword and regex filtering
+- ✅ OCR text extraction
+- ✅ Interactive command interface
+- ✅ Batch mode operation
+- ✅ Comprehensive error handling
+- ✅ Rate limiting and retry logic
+- ✅ Data export (JSON, CSV, TXT)
+- ✅ Statistics and reporting
+
+**Bug Fixes:**
+- ✅ Fixed blocking input preventing real-time monitoring
+- ✅ Fixed race conditions in group discovery
+- ✅ Fixed memory leaks in error handler
+- ✅ Fixed session file security
+- ✅ Fixed syntax errors
+
+**Improvements:**
+- ✅ Skip historical scan option (max_history_days: 0)
+- ✅ Thread-safe operations
+- ✅ Better logging and debug mode
+- ✅ Production-ready deployment options
+
+---
+
+## Quick Reference
+
+**Start monitoring:**
+```bash
+python -m telegram_scanner.cli
+> start
+```
+
+**Check status:**
+```bash
+> status
+```
+
+**View found messages:**
+```bash
+> report
+```
+
+**Stop and exit:**
+```bash
+> stop
+> quit
+```
+
+---
+
+**Status:** ✅ Production Ready  
+**Version:** 1.0.0  
+**Last Updated:** 2026-01-21
