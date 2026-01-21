@@ -47,12 +47,14 @@ class GroupScanner:
     
     def __init__(self, config: ScannerConfig, auth_manager: AuthenticationManager, 
                  message_processor: Optional[MessageProcessor] = None, 
-                 relevance_filter: Optional[RelevanceFilter] = None):
+                 relevance_filter: Optional[RelevanceFilter] = None,
+                 ai_responder=None):
         """Initialize group scanner with dependencies."""
         self.config = config
         self.auth_manager = auth_manager
         self.message_processor = message_processor
         self.relevance_filter = relevance_filter
+        self.ai_responder = ai_responder
         self._discovered_groups: List[TelegramGroup] = []
         self._monitoring = False
         self._monitoring_task: Optional[asyncio.Task] = None
@@ -700,7 +702,31 @@ class GroupScanner:
                 
                 # Store the message if storage manager is available
                 if hasattr(self.message_processor, 'storage_manager') and self.message_processor.storage_manager:
-                    await self.message_processor.storage_manager.store_message(processed_message)
+                    from dataclasses import asdict
+                    message_dict = asdict(processed_message)
+                    # Convert datetime to ISO format string
+                    if 'timestamp' in message_dict and message_dict['timestamp']:
+                        message_dict['timestamp'] = message_dict['timestamp'].isoformat()
+                    await self.message_processor.storage_manager.store_message(message_dict)
+                
+                # Generate and send AI response if enabled
+                if self.ai_responder and self.ai_responder.config.enabled and self.ai_responder.config.auto_respond:
+                    logger.info(f"Generating AI response for message {processed_message.id}")
+                    try:
+                        response = await self.ai_responder.generate_and_send_response(processed_message)
+                        if response:
+                            logger.info(f"AI response sent successfully: {response[:100]}...")
+                            if self.config.debug_mode:
+                                import sys
+                                print(f"\n{'='*80}", flush=True)
+                                print(f"AI RESPONSE SENT", flush=True)
+                                print(f"{'='*80}", flush=True)
+                                print(f"Response: {response}", flush=True)
+                                print(f"{'='*80}\n", flush=True)
+                        else:
+                            logger.warning(f"Failed to generate/send AI response for message {processed_message.id}")
+                    except Exception as e:
+                        logger.error(f"Error generating AI response: {e}")
                     
                 default_health_monitor.record_success("message_processing")
             else:
@@ -825,7 +851,12 @@ class GroupScanner:
                                 
                                 # Store the message
                                 if hasattr(self.message_processor, 'storage_manager') and self.message_processor.storage_manager:
-                                    await self.message_processor.storage_manager.store_message(processed_message)
+                                    from dataclasses import asdict
+                                    message_dict = asdict(processed_message)
+                                    # Convert datetime to ISO format string
+                                    if 'timestamp' in message_dict and message_dict['timestamp']:
+                                        message_dict['timestamp'] = message_dict['timestamp'].isoformat()
+                                    await self.message_processor.storage_manager.store_message(message_dict)
                     
                     # Log progress every 100 messages
                     if total_messages % 100 == 0:

@@ -26,6 +26,17 @@ class ScannerConfig:
     default_delay: float = 1.0
     max_wait_time: float = 60.0
     debug_mode: bool = False
+    ai_enabled: bool = False
+    ai_provider: str = "openai"
+    ai_api_url: str = "https://api.openai.com/v1/chat/completions"
+    ai_api_key: str = ""
+    ai_model: str = "gpt-3.5-turbo"
+    ai_temperature: float = 0.7
+    ai_max_tokens: int = 500
+    ai_system_prompt: str = "You are a helpful assistant responding to Telegram messages."
+    ai_prompt_template: str = ""
+    ai_cache_responses: bool = True
+    ai_auto_respond: bool = False
     
     def __post_init__(self):
         """Initialize default values for mutable fields."""
@@ -157,6 +168,20 @@ class ConfigManager:
         flattened["default_delay"] = rate_limiting.get("default_delay", 1.0)
         flattened["max_wait_time"] = rate_limiting.get("max_wait_time", 60.0)
         
+        # AI responder settings
+        ai_responder = config_data.get("ai_responder", {})
+        flattened["ai_enabled"] = ai_responder.get("enabled", False)
+        flattened["ai_provider"] = ai_responder.get("provider", "openai")
+        flattened["ai_api_url"] = ai_responder.get("api_url", "https://api.openai.com/v1/chat/completions")
+        flattened["ai_api_key"] = ai_responder.get("api_key", "")
+        flattened["ai_model"] = ai_responder.get("model", "gpt-3.5-turbo")
+        flattened["ai_temperature"] = ai_responder.get("temperature", 0.7)
+        flattened["ai_max_tokens"] = ai_responder.get("max_tokens", 500)
+        flattened["ai_system_prompt"] = ai_responder.get("system_prompt", "You are a helpful assistant responding to Telegram messages.")
+        flattened["ai_prompt_template"] = ai_responder.get("prompt_template", "")
+        flattened["ai_cache_responses"] = ai_responder.get("cache_responses", True)
+        flattened["ai_auto_respond"] = ai_responder.get("auto_respond", False)
+        
         return flattened
         
     def _structure_config(self, config_dict: Dict[str, Any]) -> Dict[str, Any]:
@@ -182,5 +207,18 @@ class ConfigManager:
                 "flood_wait_multiplier": 1.5,
                 "default_delay": config_dict.get("default_delay", 1.0),
                 "max_wait_time": config_dict.get("max_wait_time", 60.0)
+            },
+            "ai_responder": {
+                "enabled": config_dict.get("ai_enabled", False),
+                "provider": config_dict.get("ai_provider", "openai"),
+                "api_url": config_dict.get("ai_api_url", "https://api.openai.com/v1/chat/completions"),
+                "api_key": config_dict.get("ai_api_key", ""),
+                "model": config_dict.get("ai_model", "gpt-3.5-turbo"),
+                "temperature": config_dict.get("ai_temperature", 0.7),
+                "max_tokens": config_dict.get("ai_max_tokens", 500),
+                "system_prompt": config_dict.get("ai_system_prompt", "You are a helpful assistant responding to Telegram messages."),
+                "prompt_template": config_dict.get("ai_prompt_template", ""),
+                "cache_responses": config_dict.get("ai_cache_responses", True),
+                "auto_respond": config_dict.get("ai_auto_respond", False)
             }
         }

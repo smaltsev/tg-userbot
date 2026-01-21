@@ -1,0 +1,160 @@
+================================================================================
+AI RESPONDER MODULE - IMPLEMENTATION COMPLETE
+================================================================================
+
+Date: 2026-01-21
+Status: ✅ Ready to Use
+
+NEW MODULE: telegram_scanner/ai_responder.py
+================================================================================
+
+Features:
+✅ Generate intelligent responses using AI
+✅ Support for OpenAI and ProxyAPI
+✅ Response caching to reduce API calls
+✅ Custom system prompts
+✅ Custom prompt templates with placeholders
+✅ Context-aware responses
+✅ Configurable temperature and max tokens
+✅ Comprehensive error handling
+✅ Statistics tracking
+
+CONFIGURATION
+================================================================================
+
+Add to config.json:
+
+{
+  "ai_responder": {
+    "enabled": true,
+    "provider": "openai",
+    "api_url": "https://api.openai.com/v1/chat/completions",
+    "api_key": "sk-your-api-key-here",
+    "model": "gpt-3.5-turbo",
+    "temperature": 0.7,
+    "max_tokens": 500,
+    "system_prompt": "You are a helpful assistant.",
+    "prompt_template": "",
+    "cache_responses": true,
+    "auto_respond": false
+  }
+}
+
+USAGE
+================================================================================
+
+Programmatic:
+
+from telegram_scanner.ai_responder import AIResponder, AIConfig
+
+# Initialize
+ai_config = AIConfig(config_dict["ai_responder"])
+responder = AIResponder(ai_config)
+await responder.initialize()
+
+# Generate response
+response = await responder.generate_response(message)
+print(f"AI Response: {response}")
+
+# With context
+response = await responder.generate_response(message, context=previous_messages)
+
+# Cleanup
+await responder.close()
+
+PROVIDERS
+================================================================================
+
+OpenAI:
+- URL: https://api.openai.com/v1/chat/completions
+- Models: gpt-3.5-turbo, gpt-4, gpt-4-turbo
+- Get key: https://platform.openai.com/api-keys
+
+ProxyAPI:
+- URL: https://api.proxyapi.ru/openai/v1/chat/completions
+- Models: Same as OpenAI
+- Get key: https://proxyapi.ru
+
+PROMPT TEMPLATES
+================================================================================
+
+Available placeholders:
+- {message_content} - The message text
+- {sender_username} - Username of sender
+- {group_name} - Name of the group
+- {extracted_text} - Text from images
+- {timestamp} - Message timestamp
+- {context} - Previous messages
+
+Example:
+"prompt_template": "User {sender_username} in {group_name} asks:\n{message_content}\n\nRespond:"
+
+FILES CREATED
+================================================================================
+
+✅ telegram_scanner/ai_responder.py - Main module
+✅ AI_RESPONDER_GUIDE.md - Comprehensive documentation
+✅ examples/ai-responder-config.json - OpenAI example
+✅ examples/proxyapi-config.json - ProxyAPI example
+✅ Updated config.py - Added AI configuration
+✅ Updated requirements.txt - Added aiohttp
+✅ Updated config.example.json - Added AI section
+
+INTEGRATION
+================================================================================
+
+To integrate with scanner:
+
+1. Initialize in main.py:
+   from telegram_scanner.ai_responder import AIResponder, AIConfig
+   
+   ai_config = AIConfig(config.ai_responder_dict)
+   ai_responder = AIResponder(ai_config)
+   await ai_responder.initialize()
+
+2. Use in message processing:
+   if ai_responder.config.enabled:
+       response = await ai_responder.generate_response(message)
+       if response:
+           # Store or send response
+           logger.info(f"Generated: {response}")
+
+3. Cleanup on shutdown:
+   await ai_responder.close()
+
+NEXT STEPS
+================================================================================
+
+1. Get API key from OpenAI or ProxyAPI
+2. Add to config.json
+3. Set enabled: true
+4. Configure system_prompt for your use case
+5. Test with sample messages
+6. Monitor API usage and costs
+
+SECURITY
+================================================================================
+
+⚠️  Never commit API keys to version control
+✅ API keys in config.json (already in .gitignore)
+✅ Use environment variables for production
+✅ Rotate keys regularly
+✅ Monitor API usage
+✅ Set spending limits on provider dashboard
+
+COST OPTIMIZATION
+================================================================================
+
+1. Enable cache_responses: true
+2. Set appropriate max_tokens (500 is good default)
+3. Use gpt-3.5-turbo for cost-effective responses
+4. Only generate responses for relevant messages
+5. Monitor usage on provider dashboard
+
+================================================================================
+STATUS: ✅ READY TO USE
+================================================================================
+
+The AI Responder module is fully implemented and ready for production use!
+
+See AI_RESPONDER_GUIDE.md for detailed documentation.

@@ -12,6 +12,7 @@ A production-ready Python application for monitoring Telegram groups and extract
 - 🛡️ **Error Resilience** - Comprehensive error handling and retry logic
 - 🎮 **Interactive Control** - Command-line interface for live management
 - 📊 **OCR Support** - Text extraction from images using Tesseract
+- 🤖 **AI Responder** - Automated intelligent responses using OpenAI or ProxyAPI
 
 ---
 
@@ -67,6 +68,19 @@ Edit `config.json`:
     "flood_wait_multiplier": 1.0,
     "default_delay": 0.5,
     "max_wait_time": 300.0
+  },
+  "ai_responder": {
+    "enabled": false,
+    "provider": "proxyapi",
+    "api_url": "https://api.proxyapi.ru/openai/v1/chat/completions",
+    "api_key": "YOUR_API_KEY",
+    "model": "gpt-3.5-turbo",
+    "temperature": 0.7,
+    "max_tokens": 500,
+    "system_prompt": "You are a helpful assistant responding to Telegram messages.",
+    "prompt_template": "Message from {sender_username} in {group_name}:\n{message_content}\n\nGenerate an appropriate response:",
+    "cache_responses": true,
+    "auto_respond": false
   }
 }
 ```
@@ -183,6 +197,64 @@ python -m telegram_scanner.cli --test-discovery
 - **default_delay**: Delay between requests (seconds)
 - **max_wait_time**: Maximum wait time for rate limiting (seconds)
 
+### AI Responder
+
+```json
+{
+  "ai_responder": {
+    "enabled": false,
+    "provider": "proxyapi",
+    "api_url": "https://api.proxyapi.ru/openai/v1/chat/completions",
+    "api_key": "YOUR_API_KEY",
+    "model": "gpt-3.5-turbo",
+    "temperature": 0.7,
+    "max_tokens": 500,
+    "system_prompt": "You are a helpful assistant responding to Telegram messages.",
+    "prompt_template": "Message from {sender_username} in {group_name}:\n{message_content}\n\nGenerate an appropriate response:",
+    "cache_responses": true,
+    "auto_respond": false
+  }
+}
+```
+
+- **enabled**: Enable/disable AI responder
+- **provider**: "openai" or "proxyapi"
+- **api_url**: API endpoint URL
+- **api_key**: Your API key
+- **model**: AI model to use (e.g., "gpt-3.5-turbo", "gpt-4")
+- **temperature**: Response creativity (0.0-1.0)
+- **max_tokens**: Maximum response length
+- **system_prompt**: System instructions for the AI
+- **prompt_template**: Template for user prompts (supports placeholders: {message_content}, {sender_username}, {group_name}, {extracted_text}, {timestamp}, {context})
+- **cache_responses**: Cache responses to reduce API calls
+- **auto_respond**: Automatically respond to relevant messages
+
+**Providers:**
+
+**OpenAI:**
+```json
+{
+  "provider": "openai",
+  "api_url": "https://api.openai.com/v1/chat/completions",
+  "api_key": "sk-..."
+}
+```
+
+**ProxyAPI (Russian):**
+```json
+{
+  "provider": "proxyapi",
+  "api_url": "https://api.proxyapi.ru/openai/v1/chat/completions",
+  "api_key": "YOUR_PROXYAPI_KEY"
+}
+```
+
+**Response Behavior:**
+- Tries to reply in the group first
+- Falls back to private message if group posting is restricted
+- Handles permissions errors gracefully
+- Caches responses to avoid duplicate API calls
+
 ---
 
 ## Features in Detail
@@ -230,6 +302,52 @@ Scans past messages on startup:
 
 **Skip Historical Scan:**
 Set `max_history_days: 0` to only monitor new messages (faster startup).
+
+### AI-Powered Responses
+
+Automatically generate and send intelligent responses to relevant messages:
+
+**Features:**
+- Support for OpenAI and ProxyAPI
+- Custom system prompts and templates
+- Response caching to reduce API costs
+- Automatic fallback to private messages
+- Context-aware responses
+
+**How it works:**
+1. Scanner detects relevant message
+2. AI generates appropriate response
+3. Tries to reply in group
+4. Falls back to private message if restricted
+5. Caches response to avoid duplicates
+
+**Enable AI Responder:**
+```json
+{
+  "ai_responder": {
+    "enabled": true,
+    "auto_respond": true,
+    "provider": "proxyapi",
+    "api_key": "YOUR_KEY"
+  }
+}
+```
+
+**Custom Prompts:**
+```json
+{
+  "system_prompt": "Ты профессиональный маркетолог. Отвечай кратко и по делу.",
+  "prompt_template": "Сообщение от {sender_username}:\n{message_content}\n\nОтветь профессионально:"
+}
+```
+
+**Placeholders:**
+- `{message_content}` - Message text
+- `{sender_username}` - Sender's username
+- `{group_name}` - Group name
+- `{extracted_text}` - Text from images
+- `{timestamp}` - Message timestamp
+- `{context}` - Previous messages
 
 ### Data Storage
 
@@ -472,6 +590,7 @@ telegram-group-scanner/
 
 **Python Dependencies:**
 - telethon >= 1.30.0
+- aiohttp >= 3.9.0
 - Pillow >= 10.0.0
 - pytesseract >= 0.3.10
 - python-dateutil >= 2.8.2
@@ -509,6 +628,8 @@ MIT License - See LICENSE file for details
 - ✅ Rate limiting and retry logic
 - ✅ Data export (JSON, CSV, TXT)
 - ✅ Statistics and reporting
+- ✅ AI-powered responses (OpenAI/ProxyAPI)
+- ✅ Automatic response fallback (group → private message)
 
 **Bug Fixes:**
 - ✅ Fixed blocking input preventing real-time monitoring
@@ -522,6 +643,8 @@ MIT License - See LICENSE file for details
 - ✅ Thread-safe operations
 - ✅ Better logging and debug mode
 - ✅ Production-ready deployment options
+- ✅ AI response caching
+- ✅ Custom prompt templates
 
 ---
 

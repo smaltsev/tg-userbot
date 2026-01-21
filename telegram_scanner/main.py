@@ -34,6 +34,7 @@ class TelegramScanner:
         self.relevance_filter: Optional[RelevanceFilter] = None
         self.storage_manager: Optional[StorageManager] = None
         self.command_interface: Optional[CommandInterface] = None
+        self.ai_responder = None
         self._initialized = False
         
     async def initialize(self):
@@ -58,11 +59,37 @@ class TelegramScanner:
             )
             
             self.message_processor = MessageProcessor(config, self.storage_manager, rate_limiter)
+            
+            # Initialize AI responder if enabled
+            from .ai_responder import AIResponder, AIConfig
+            ai_config_dict = {
+                "enabled": config.ai_enabled,
+                "provider": config.ai_provider,
+                "api_url": config.ai_api_url,
+                "api_key": config.ai_api_key,
+                "model": config.ai_model,
+                "temperature": config.ai_temperature,
+                "max_tokens": config.ai_max_tokens,
+                "system_prompt": config.ai_system_prompt,
+                "prompt_template": config.ai_prompt_template,
+                "cache_responses": config.ai_cache_responses,
+                "auto_respond": config.ai_auto_respond
+            }
+            ai_config = AIConfig(ai_config_dict)
+            if ai_config.validate():
+                self.ai_responder = AIResponder(ai_config, self.auth_manager)
+                await self.ai_responder.initialize()
+                logger.info(f"AI Responder initialized (provider: {ai_config.provider}, auto_respond: {ai_config.auto_respond})")
+            else:
+                logger.warning("AI Responder configuration invalid, disabled")
+                self.ai_responder = None
+            
             self.group_scanner = GroupScanner(
                 config, 
                 self.auth_manager, 
                 self.message_processor, 
-                self.relevance_filter
+                self.relevance_filter,
+                self.ai_responder
             )
             
             # Set the same rate limiter in the scanner
@@ -89,6 +116,10 @@ class TelegramScanner:
             # Stop scanning if active
             if self.command_interface and self.command_interface.get_current_state().value != "stopped":
                 await self.command_interface.stop_scanning()
+            
+            # Close AI responder
+            if self.ai_responder:
+                await self.ai_responder.close()
                 
             # Close authentication session
             if self.auth_manager and self.auth_manager._client:

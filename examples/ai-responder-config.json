@@ -1,0 +1,36 @@
+{
+  "api_credentials": {
+    "api_id": "YOUR_API_ID",
+    "api_hash": "YOUR_API_HASH"
+  },
+  "scanning": {
+    "scan_interval": 30,
+    "max_history_days": 0,
+    "selected_groups": ["Support Group", "Customer Inquiries"],
+    "debug_mode": false
+  },
+  "relevance": {
+    "keywords": ["help", "question", "how to", "problem", "issue"],
+    "regex_patterns": [],
+    "logic": "OR"
+  },
+  "rate_limiting": {
+    "requests_per_minute": 30,
+    "flood_wait_multiplier": 1.0,
+    "default_delay": 0.5,
+    "max_wait_time": 300.0
+  },
+  "ai_responder": {
+    "enabled": true,
+    "provider": "openai",
+    "api_url": "https://api.openai.com/v1/chat/completions",
+    "api_key": "sk-your-openai-api-key-here",
+    "model": "gpt-3.5-turbo",
+    "temperature": 0.7,
+    "max_tokens": 500,
+    "system_prompt": "You are a helpful customer support assistant. Provide clear, concise, and professional responses to user questions. Be friendly and solution-oriented.",
+    "prompt_template": "Context: {context}\n\nUser message from {sender_username} in {group_name}:\n{message_content}\n\nGenerate a helpful response:",
+    "cache_responses": true,
+    "auto_respond": false
+  }
+}
