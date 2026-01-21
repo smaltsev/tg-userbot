@@ -98,7 +98,7 @@ class GroupScanner:
             return False
             
     async def load_discovered_groups(self) -> bool:
-        """Load discovered groups from cache file."""
+        """Load discovered groups from cache file and apply selected_groups filter."""
         try:
             if not self._groups_cache_file.exists():
                 logger.info("No cached groups file found")
@@ -107,10 +107,31 @@ class GroupScanner:
             with open(self._groups_cache_file, 'r', encoding='utf-8') as f:
                 groups_data = json.load(f)
             
-            async with self._groups_lock:
-                self._discovered_groups = [TelegramGroup(**group) for group in groups_data]
+            all_groups = [TelegramGroup(**group) for group in groups_data]
             
-            logger.info(f"Loaded {len(self._discovered_groups)} groups from cache")
+            # Apply selected_groups filter if configured
+            if self.config.selected_groups:
+                filtered_groups = []
+                for group in all_groups:
+                    # Check if group matches any selected group (by title or username)
+                    for selected in self.config.selected_groups:
+                        if (selected.lower() in group.title.lower() or 
+                            (group.username and selected.lower() in group.username.lower())):
+                            filtered_groups.append(group)
+                            break
+                
+                async with self._groups_lock:
+                    self._discovered_groups = filtered_groups
+                
+                logger.info(f"Loaded {len(filtered_groups)} groups from cache (filtered from {len(all_groups)} total)")
+                if len(filtered_groups) < len(self.config.selected_groups):
+                    missing = len(self.config.selected_groups) - len(filtered_groups)
+                    logger.warning(f"{missing} selected groups not found in cache. Run 'scan' command to refresh.")
+            else:
+                async with self._groups_lock:
+                    self._discovered_groups = all_groups
+                logger.info(f"Loaded {len(all_groups)} groups from cache")
+            
             return True
             
         except Exception as e:
