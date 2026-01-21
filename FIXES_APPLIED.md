@@ -114,6 +114,7 @@ Edit `config.json` to configure:
 - **Selected Groups:** Groups to monitor
 - **Keywords:** Keywords to search for
 - **Scan Interval:** How often to check
+- **Max History Days:** Days of history to scan (set to 0 to skip historical scan)
 - **Debug Mode:** Enable detailed logging
 
 Example:
@@ -125,6 +126,7 @@ Example:
   },
   "scanning": {
     "selected_groups": ["GroupName1", "GroupName2"],
+    "max_history_days": 7,
     "debug_mode": false
   },
   "relevance": {
@@ -133,6 +135,23 @@ Example:
   }
 }
 ```
+
+### Skip Historical Scan
+
+To only monitor new messages without scanning history, set `max_history_days` to 0:
+
+```json
+{
+  "scanning": {
+    "max_history_days": 0
+  }
+}
+```
+
+This is useful when:
+- You only care about new messages going forward
+- You want faster startup time
+- You have large groups with lots of history
 
 ---
 

@@ -121,13 +121,17 @@ class CommandInterface:
                         print("Groups will be cached for future use.\n")
                         await self.scanner.group_scanner.discover_groups()
                 
-                # Scan historical messages first
-                logger.info("Scanning historical messages...")
-                history_result = await self.scanner.group_scanner.scan_history()
-                if history_result:
-                    self._messages_processed += history_result.get('total_messages', 0)
-                    self._relevant_messages_found += history_result.get('relevant_messages', 0)
-                    self._last_scan_time = datetime.now(timezone.utc)
+                # Scan historical messages first (skip if max_history_days is 0)
+                if self.scanner.config_manager.get_config().max_history_days > 0:
+                    logger.info("Scanning historical messages...")
+                    history_result = await self.scanner.group_scanner.scan_history()
+                    if history_result:
+                        self._messages_processed += history_result.get('total_messages', 0)
+                        self._relevant_messages_found += history_result.get('relevant_messages', 0)
+                        self._last_scan_time = datetime.now(timezone.utc)
+                else:
+                    logger.info("Skipping historical scan (max_history_days is 0)")
+                    print("Skipping historical scan - will only monitor new messages")
                 
                 # Start real-time monitoring
                 await self.scanner.group_scanner.start_monitoring()
